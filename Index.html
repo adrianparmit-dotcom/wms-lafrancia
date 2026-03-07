@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>WMS Picking — La Francia</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<!-- Firebase compat desde cdnjs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.0/firebase-database-compat.min.js"></script>
+<script>
+  try {
+    firebase.initializeApp({
+      apiKey: "AIzaSyAfuUM2NDoxprxIiOW0-9QT0sfWfB8uZIM",
+      authDomain: "wms-lafrancia.firebaseapp.com",
+      databaseURL: "https://wms-lafrancia-default-rtdb.firebaseio.com",
+      projectId: "wms-lafrancia",
+      storageBucket: "wms-lafrancia.firebasestorage.app",
+      messagingSenderId: "36769215353",
+      appId: "1:36769215353:web:1d5c0b003926995c5535a8"
+    });
+    window.db = firebase.database();
+    window.fbOk = true;
+  } catch(e) {
+    console.warn("Firebase no disponible:", e);
+    window.fbOk = false;
+    // Mock db para que la app funcione sin Firebase
+    window.db = {
+      ref: () => ({
+        on: ()=>{}, off: ()=>{}, set: ()=>{}, remove: ()=>{},
+        onDisconnect: ()=>({remove:()=>{}}),
+        transaction: (fn, cb) => { cb(null, false); }
+      })
+    };
+  }
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#0f172a;font-family:'Segoe UI',system-ui,sans-serif;color:#f8fafc;}
+select option{background:#1e293b;}
+button:active{opacity:0.85;}
+input,select,textarea{outline:none;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:#0f172a;}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:2px;}
+@keyframes popIn{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.hov:hover{background:#273347!important;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef} = React;
+
+// ── MARCAS ───────────────────────────────────────────────────────────────────
+const ORDEN_MARCAS = [
+  {id:"LF_PANES",  label:"La Francia Panes", tipo:"picking",      color:"#e85d04", bg:"#7b2d00"},
+  {id:"LF_DULCE",  label:"La Francia Dulce", tipo:"picking",      color:"#f4a261", bg:"#6d3a00"},
+  {id:"Olympic Pro",label:"Olympic Pro",     tipo:"distribucion", color:"#0096c7", bg:"#023e8a"},
+  {id:"Tibax",     label:"Tibax",            tipo:"distribucion", color:"#40916c", bg:"#1b4332"},
+  {id:"Boccone",   label:"Boccone",          tipo:"distribucion", color:"#e94560", bg:"#1a1a2e"},
+  {id:"Hesai",     label:"Hesai",            tipo:"distribucion", color:"#52b788", bg:"#2d6a4f"},
+  {id:"Granger",   label:"Granger",          tipo:"distribucion", color:"#4cc9f0", bg:"#0f3460"},
+  {id:"Nilo Life", label:"Nilo Life",        tipo:"distribucion", color:"#b5179e", bg:"#3a0ca3"},
+];
+
+// ── CATÁLOGO ─────────────────────────────────────────────────────────────────
+const PRODUCTOS = [
+  // ── La Francia Panes
+  {id:"LF01",marcaId:"LF_PANES",nombre:"Pan Multicereal 560g x14u"},
+  {id:"LF02",marcaId:"LF_PANES",nombre:"Pan Doble Integral 560g x14u"},
+  {id:"LF03",marcaId:"LF_PANES",nombre:"Pan Doble Salvado 560g x14u"},
+  {id:"LF04",marcaId:"LF_PANES",nombre:"Pan Artesanal 560g x14u"},
+  {id:"LF05",marcaId:"LF_PANES",nombre:"Pan Calabaza 560g x14u"},
+  {id:"LF06",marcaId:"LF_PANES",nombre:"Pan Sin Sal 560g x14u"},
+  {id:"LF07",marcaId:"LF_PANES",nombre:"Pan Zapallo y Cúrcuma 560g x14u"},
+  {id:"LF08",marcaId:"LF_PANES",nombre:"Pan Tres Harinas Integrales 560g x14u"},
+  {id:"LF09",marcaId:"LF_PANES",nombre:"Pan Activo 560g x14u"},
+  {id:"LF10",marcaId:"LF_PANES",nombre:"Pan Blanco 560g x14u"},
+  {id:"LF11",marcaId:"LF_PANES",nombre:"Pan Pasas de Uva 560g x14u"},
+  {id:"LF12",marcaId:"LF_PANES",nombre:"Pan de Papa x14u"},
+  // ── La Francia Dulce
+  {id:"LF20",marcaId:"LF_DULCE",nombre:"Pepas de Membrillo 250g x32u"},
+  {id:"LF21",marcaId:"LF_DULCE",nombre:"Pepas de Membrillo 1Kg x8u"},
+  {id:"LF22",marcaId:"LF_DULCE",nombre:"Pepas de Batata 250g x32u"},
+  {id:"LF23",marcaId:"LF_DULCE",nombre:"Pepas de Batata 1Kg x8u"},
+  {id:"LF24",marcaId:"LF_DULCE",nombre:"Pepas de Algarroba 250g x32u"},
+  {id:"LF25",marcaId:"LF_DULCE",nombre:"Pepas de Algarroba 1Kg x8u"},
+  // ── Hesai
+  {id:"H01",marcaId:"Hesai",nombre:"Chalitas Integrales Multicereal x180gs x16u"},
+  {id:"H02",marcaId:"Hesai",nombre:"Chalitas Integrales Avena, Tomillo y Orégano x180gs x16u"},
+  {id:"H03",marcaId:"Hesai",nombre:"Chalitas Integrales Avena y Cebolla x180gs x16u"},
+  {id:"H04",marcaId:"Hesai",nombre:"Chalitas con Lino x180gs x20u"},
+  {id:"H05",marcaId:"Hesai",nombre:"Stevia 220gr x22u"},
+  // ── Tibax
+  {id:"T01",marcaId:"Tibax",nombre:"Tortilla Integral 230g x30u"},
+  {id:"T02",marcaId:"Tibax",nombre:"Tortilla Trigo 230g x30u"},
+  {id:"T03",marcaId:"Tibax",nombre:"Tortilla Espinaca 230g x30u"},
+  {id:"T04",marcaId:"Tibax",nombre:"Wraps Trigo 420g x20u"},
+  {id:"T05",marcaId:"Tibax",nombre:"Tortilla Ají Cayena 230g x30u"},
+  {id:"T06",marcaId:"Tibax",nombre:"Wraps Salvado 420g x20u"},
+  {id:"T07",marcaId:"Tibax",nombre:"Tortilla Chocolate 180gx30u"},
+  {id:"T08",marcaId:"Tibax",nombre:"T30"},
+  // ── Boccone
+  {id:"B01",marcaId:"Boccone",nombre:"Avena, Girasol y Naranja 145g x45u"},
+  {id:"B02",marcaId:"Boccone",nombre:"Avena y Pasas de Uva 145g x45u"},
+  {id:"B03",marcaId:"Boccone",nombre:"Avena, Chocolate y Coco 145g x45u"},
+  {id:"B04",marcaId:"Boccone",nombre:"Avena, Chía y Limón 145g x45u"},
+  {id:"B05",marcaId:"Boccone",nombre:"Avena y Nuez 145g x45u"},
+  {id:"B06",marcaId:"Boccone",nombre:"Avena, Cacao y Maní 145g x45u"},
+  {id:"B07",marcaId:"Boccone",nombre:"Alfajores veganos x50g x9 Blister"},
+  {id:"B08",marcaId:"Boccone",nombre:"Alfajor recubierto en chocolate x50g x9 Blister"},
+  // ── Olympic Pro
+  {id:"O01",marcaId:"Olympic Pro",nombre:"Barritas Proteicas"},
+  {id:"O02",marcaId:"Olympic Pro",nombre:"Barritas Energéticas "},
+  {id:"O03",marcaId:"Olympic Pro",nombre:"Alfajores Proteicos"},
+  {id:"O04",marcaId:"Olympic Pro",nombre:"Alfajor Energético Choco Blanco"},
+  {id:"O05",marcaId:"Olympic Pro",nombre:"Granola Proteica 1kg x8u"},
+  {id:"O06",marcaId:"Olympic Pro",nombre:"Granola Energética 1kg x8u"},
+  {id:"O07",marcaId:"Olympic Pro",nombre:"Granola Proteica Chocolate 1kg x8u"},
+  {id:"O08",marcaId:"Olympic Pro",nombre:"Granola con Pasta de Maní 1kg x8u"},
+  {id:"O09",marcaId:"Olympic Pro",nombre:"Granola Energética 0,5kg"},
+  {id:"O10",marcaId:"Olympic Pro",nombre:"Granola Proteica 500g x16u"},
+  {id:"O11",marcaId:"Olympic Pro",nombre:"Pasta de Maní Proteica"},
+  {id:"O12",marcaId:"Olympic Pro",nombre:"Pasta de Maní Natural"},
+  {id:"O13",marcaId:"Olympic Pro",nombre:"Barrita Vita x18u x8"},
+  {id:"O14",marcaId:"Olympic Pro",nombre:"Barrita Proteica Vita x18u x8"},
+  // ── Granger
+  {id:"G01",marcaId:"Granger",nombre:"Pancakes Vainilla 400 Grs x12u"},
+  {id:"G02",marcaId:"Granger",nombre:"Pancakes Chocolate 400 Grs x12u"},
+  {id:"G03",marcaId:"Granger",nombre:"Omelette Jamon y Queso 210g"},
+  {id:"G04",marcaId:"Granger",nombre:"Chía Pudding 280 Grs x10u"},
+  {id:"G05",marcaId:"Granger",nombre:"Cupcake Chocolate 360Grs x12u"},
+  {id:"G06",marcaId:"Granger",nombre:"Pancake Keto Vainilla 200 Grs x12u"},
+  {id:"G07",marcaId:"Granger",nombre:"Creatina 300g x8u"},
+  {id:"G08",marcaId:"Granger",nombre:"Citrato de Magnesio 144g x14u"},
+  {id:"G09",marcaId:"Granger",nombre:"Colágeno Hidrolizado Clear 250g x8u"},
+  {id:"G10",marcaId:"Granger",nombre:"Colágeno Hidrolizado Naranja 250g x8u"},
+  {id:"G11",marcaId:"Granger",nombre:"Colágeno Flex Naranja 250g x8u"},
+  {id:"G12",marcaId:"Granger",nombre:"Pancake Vegano Chocolate 400g x12u"},
+  {id:"G13",marcaId:"Granger",nombre:"Colágeno Beauty Naranja 250g x8u"},
+  {id:"G14",marcaId:"Granger",nombre:"Pancakes Proteico Queso 300gs x14u"},
+  {id:"G15",marcaId:"Granger",nombre:"Omelette Mix Verduras 210Grs x14u"},
+  {id:"G16",marcaId:"Granger",nombre:"Proteína de Arveja Vainilla 453G x4u"},
+  {id:"G17",marcaId:"Granger",nombre:"Proteína de Arveja Natural 453G x4u"},
+  {id:"G18",marcaId:"Granger",nombre:"Proteína de Huevo Natural 453g x4u"},
+  {id:"G19",marcaId:"Granger",nombre:"Proteína de Huevo Chocolate 453g x4u"},
+  {id:"G20",marcaId:"Granger",nombre:"Proteína de Huevo Vainilla 453g x4u"},
+  {id:"G21",marcaId:"Granger",nombre:"Whey Protein Concentrada Natural 453g x4u"},
+  {id:"G22",marcaId:"Granger",nombre:"Whey Protein Concentrada Chocolate 453g x4u"},
+  {id:"G23",marcaId:"Granger",nombre:"Whey Protein Concentrada Vainilla 453g x4u"},
+  {id:"G24",marcaId:"Granger",nombre:"Omelette Jamón y Queso 210g x14u"},
+  {id:"G25",marcaId:"Granger",nombre:"Cupcakes Keto Vainilla 210g x12u"},
+  {id:"G26",marcaId:"Granger",nombre:"Cupcakes Keto Chocolate 210g x12u"},
+  {id:"G27",marcaId:"Granger",nombre:"Pancake Keto Chocolate 200 Grs x12u"},
+  {id:"G28",marcaId:"Granger",nombre:"Gelatina Frutilla con colágeno 150g x12u"},
+  {id:"G29",marcaId:"Granger",nombre:"Gelatina Durazno con colágeno 150g x12u"},
+  {id:"G30",marcaId:"Granger",nombre:"Cookies Proteicas 220g x10u"},
+  {id:"G31",marcaId:"Granger",nombre:"Pancake Proteico Caprese 300g x14u"},
+  {id:"G32",marcaId:"Granger",nombre:"Almendra Non Pareil 4 mediana grande (27-30)"},
+  {id:"G33",marcaId:"Granger",nombre:"Levadura Nutricional 160g"},
+  // ── Nilo Life
+  {id:"N01",marcaId:"Nilo Life",nombre:"Pepas Int. Naranja 250G X12U"},
+  {id:"N02",marcaId:"Nilo Life",nombre:"Pepas Int. al Malbec 250G X12U"},
+  {id:"N03",marcaId:"Nilo Life",nombre:"Pepas Int. al Fernet 250G X12U"},
+  {id:"N04",marcaId:"Nilo Life",nombre:"Pepas Int. Choco y Frambuesa 250G X12U"},
+  {id:"N05",marcaId:"Nilo Life",nombre:"Pepas Int. Limón y Amapola 250G X12U"},
+  {id:"N06",marcaId:"Nilo Life",nombre:"Tapitas Int Cumple 250G X12U"},
+];
+
+// Nombres cortos para botones de picking (La Francia)
+const NOMBRE_CORTO = {
+  "LF01":"Multicereal","LF02":"Doble Integral","LF03":"Doble Salvado","LF04":"Artesanal",
+  "LF05":"Calabaza","LF06":"Sin Sal","LF07":"Zapallo y Cúrcuma","LF08":"Tres Harinas","LF09":"Activo",
+  "LF10":"Blanco","LF11":"Pasas de Uva","LF12":"Pan de Papa",
+  "LF20":"Membrillo 250g","LF21":"Membrillo 1kg","LF22":"Batata 250g","LF23":"Batata 1kg",
+  "LF24":"Algarroba 250g","LF25":"Algarroba 1kg",
+};
+
+// ── POSICIONES ────────────────────────────────────────────────────────────────
+const POS_ORD = [
+  "A1","B1","A2","B2","A3","B3","A4","B4","A5","B5",
+  "A6","B6","A7","B7","A8","B8","A9","B9","A10","B10",
+  "A11","B11","A12","B12","A13","B13","A14","B14","A15","B15",
+];
+const TODAS_POS = POS_ORD;
+
+// Zona 1: A1-A5 / B1-B5, Zona 2: A6-A10 / B6-B10, Zona 3: A11-A15 / B11-B15
+const zonaDePos = pos => {
+  const n = parseInt(pos.replace(/[AB]/,""));
+  if(n<=5) return 1;
+  if(n<=10) return 2;
+  return 3;
+};
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+const estadoItem = p => p.entregado===0?"pendiente":p.entregado>=p.cantidad?"completo":"parcial";
+
+const S = {
+  card:{background:"#1e293b",borderRadius:10,border:"1px solid #334155"},
+  input:{background:"#0f172a",border:"1px solid #334155",color:"#f8fafc",borderRadius:7,padding:"8px 10px",fontSize:13,width:"100%"},
+  btnP:{background:"#3b82f6",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:15,fontWeight:900,cursor:"pointer",width:"100%"},
+  btnS:{background:"#1e293b",color:"#64748b",border:"1px solid #334155",borderRadius:10,padding:"11px",fontSize:13,cursor:"pointer",width:"100%"},
+};
+
+const Badge = ({estado}) => {
+  const c={pendiente:{bg:"#7f1d1d",fg:"#fca5a5",t:"● Pendiente"},parcial:{bg:"#713f12",fg:"#fcd34d",t:"◐ Parcial"},completo:{bg:"#14532d",fg:"#86efac",t:"✓ Completo"}}[estado]||{bg:"#1e293b",fg:"#94a3b8",t:estado};
+  return <span style={{background:c.bg,color:c.fg,padding:"2px 7px",borderRadius:99,fontSize:11,fontWeight:700}}>{c.t}</span>;
+};
+
+// ── DEMO DATA ─────────────────────────────────────────────────────────────────
+const generarDemo = () => {
+  const clientes=["Carlos-Jordan","Guillermo Suárez","Murezzi","Placeres Naturales","SOHO","Juani Díaz","Mauro","El Camino","Junior Helfrichs","Vergara Francisco","La Vereda del Sol","Camar"];
+  const posiciones=["A1","A2","A3","B1","B2","B3","A4","B4","A5","B5","A6","B6"];
+  const pedidos=[]; let id=1;
+  const pm=m=>PRODUCTOS.filter(p=>p.marcaId===m);
+  clientes.forEach((cliente,ci)=>{
+    const pos=posiciones[ci%posiciones.length];
+    // La Francia — 1 unidad por ítem para reflejar flujo real
+    [0,1,2].forEach(i=>{
+      const p=pm("LF_PANES")[i];
+      if(p){
+        const cant=1+(ci+i)%3;
+        // Crear un ítem por unidad
+        for(let u=0;u<cant;u++) pedidos.push({id:id++,cliente,posicion:pos,productoId:p.id,productoNombre:p.nombre,marcaId:p.marcaId,cantidad:1,entregado:0});
+      }
+    });
+    if(ci%2===0){const p=pm("LF_DULCE")[ci%pm("LF_DULCE").length];if(p)pedidos.push({id:id++,cliente,posicion:pos,productoId:p.id,productoNombre:p.nombre,marcaId:p.marcaId,cantidad:1,entregado:0});}
+    if(ci%3===0){const p=pm("Olympic Pro")[ci%pm("Olympic Pro").length];if(p)pedidos.push({id:id++,cliente,posicion:pos,productoId:p.id,productoNombre:p.nombre,marcaId:p.marcaId,cantidad:2+ci%3,entregado:0});}
+    if(ci%2===1){const p=pm("Granger")[ci%pm("Granger").length];if(p)pedidos.push({id:id++,cliente,posicion:pos,productoId:p.id,productoNombre:p.nombre,marcaId:p.marcaId,cantidad:1+ci%3,entregado:0});}
+    if(ci%4===0){const p=pm("Tibax")[ci%pm("Tibax").length];if(p)pedidos.push({id:id++,cliente,posicion:pos,productoId:p.id,productoNombre:p.nombre,marcaId:p.marcaId,cantidad:1+ci%2,entregado:0});}
+  });
+  return pedidos;
+};
+
+// ── CSV PARSER — mapeo EXACTO por encabezado de columna ──────────────────────
+// Mapea encabezado del CSV → id de producto en PRODUCTOS
+// Las claves son exactamente como aparecen en la fila de encabezados del Sheet
+const CSV_HEADER_MAP = {
+  "Pan Multicereal 560g x14u":                              "LF01",
+  "Pan Doble Integral 560g x14u":                           "LF02",
+  "Pan Doble Salvado 560g x14u":                            "LF03",
+  "Pan Artesanal 560g x14u":                                "LF04",
+  "Pan Calabaza 560g x14u":                                 "LF05",
+  "Pan Sin Sal 560g x14u":                                  "LF06",
+  "Pan Zapallo y Cúrcuma 560g x14u":                        "LF07",
+  "Pan Tres Harinas Integrales 560g x14u":                  "LF08",
+  "Pan Activo 560g x14u":                                   "LF09",
+  "Pan Blanco 560g x14u":                                   "LF10",
+  "Pan Pasas de Uva 560g x14u":                             "LF11",
+  "Pan de Papa x14u":                                       "LF12",
+  "Pepas de Membrillo 250g x32u":                           "LF20",
+  "Pepas de Membrillo 1Kg x8u":                             "LF21",
+  "Pepas de Batata 250g x32u":                              "LF22",
+  "Pepas de Batata 1Kg x8u":                                "LF23",
+  "Pepas de Algarroba 250g x32u":                           "LF24",
+  "Pepas de Algarroba 1Kg x8u":                             "LF25",
+  "Chalitas Integrales Multicereal x180gs x16u":            "H01",
+  "Chalitas Integrales Avena, Tomillo y Orégano x180gs x16u":"H02",
+  "Chalitas Integrales Avena y Cebolla x180gs x16u":        "H03",
+  "Chalitas con Lino x180gs x20u":                          "H04",
+  "Stevia 220gr x22u":                                      "H05",
+  "Tortilla Integral 230g x30u":                            "T01",
+  "Tortilla Trigo 230g x30u":                               "T02",
+  "Tortilla Espinaca 230g x30u":                            "T03",
+  "Wraps Trigo 420g x20u":                                  "T04",
+  "Tortilla Ají Cayena 230g x30u":                          "T05",
+  "Wraps Salvado 420g x20u":                                "T06",
+  "Tortilla Chocolate 180gx30u":                            "T07",
+  "T30":                                                    "T08",
+  "Avena, Girasol y Naranja 145g x45u":                     "B01",
+  "Avena y Pasas de Uva 145g x45u":                         "B02",
+  "Avena, Chocolate y Coco 145g x45u":                      "B03",
+  "Avena, Chía y Limón 145g x45u":                          "B04",
+  "Avena y Nuez 145g x45u":                                 "B05",
+  "Avena, Cacao y Maní 145g x45u":                          "B06",
+  "Alfajores veganos x50g x9 Blister":                      "B07",
+  "Alfajor recubierto en chocolate x50g x9 Blister":        "B08",
+  "Barritas Proteicas":                                      "O01",
+  "Barritas Energéticas ":                                   "O02",
+  "Alfajores Proteicos":                                     "O03",
+  "Alfajor Energético Choco Blanco":                         "O04",
+  "Granola Proteica 1kg x8u":                               "O05",
+  "Granola Energética 1kg x8u":                             "O06",
+  "Granola Proteica Chocolate 1kg x8u":                     "O07",
+  "Granola con Pasta de Maní 1kg x8u":                      "O08",
+  "Granola Energética 0,5kg":                               "O09",
+  "Granola Proteica 500g x16u":                             "O10",
+  "Pasta de Maní Proteica":                                 "O11",
+  "Pasta de Maní Natural":                                  "O12",
+  "Barrita Vita x18u x8":                                   "O13",
+  "Barrita Proteica Vita x18u x8":                          "O14",
+  "Pancakes Vainilla 400 Grs x12u":                         "G01",
+  "Pancakes Chocolate 400 Grs x12u":                        "G02",
+  "Omelette Jamon y Queso 210g":                            "G03",
+  "Chía Pudding 280 Grs x10u":                              "G04",
+  "Cupcake Chocolate 360Grs x12u":                          "G05",
+  "Pancake Keto Vainilla 200 Grs x12u":                     "G06",
+  "Creatina 300g x8u":                                      "G07",
+  "Citrato de Magnesio 144g x14u":                          "G08",
+  "Colágeno Hidrolizado Clear 250g x8u":                    "G09",
+  "Colágeno Hidrolizado Naranja 250g x8u":                  "G10",
+  "Colágeno Flex Naranja 250g x8u":                         "G11",
+  "Pancake Vegano Chocolate 400g x12u":                     "G12",
+  "Colágeno Beauty Naranja 250g x8u":                       "G13",
+  "Pancakes Proteico Queso 300gs x14u":                     "G14",
+  "Omelette Mix Verduras 210Grs x14u":                      "G15",
+  "Proteína de Arveja Vainilla 453G x4u":                   "G16",
+  "Proteína de Arveja Natural 453G x4u":                    "G17",
+  "Proteína de Huevo Natural 453g x4u":                     "G18",
+  "Proteína de Huevo Chocolate 453g x4u":                   "G19",
+  "Proteína de Huevo Vainilla 453g x4u":                    "G20",
+  "Whey Protein Concentrada Natural 453g x4u":              "G21",
+  "Whey Protein Concentrada Chocolate 453g x4u":            "G22",
+  "Whey Protein Concentrada Vainilla 453g x4u":             "G23",
+  "Omelette Jamón y Queso 210g x14u":                       "G24",
+  "Cupcakes Keto Vainilla 210g x12u":                       "G25",
+  "Cupcakes Keto Chocolate 210g x12u":                      "G26",
+  "Pancake Keto Chocolate 200 Grs x12u":                    "G27",
+  "Gelatina Frutilla con colágeno 150g x12u":               "G28",
+  "Gelatina Durazno con colágeno 150g x12u":                "G29",
+  "Cookies Proteicas 220g x10u":                            "G30",
+  "Pancake Proteico Caprese 300g x14u":                     "G31",
+  "Almendra Non Pareil 4 mediana grande (27-30)":           "G32",
+  "Levadura Nutricional 160g":                              "G33",
+  "Pepas Int. Naranja 250G X12U":                           "N01",
+  "Pepas Int. al Malbec 250G X12U":                         "N02",
+  "Pepas Int. al Fernet 250G X12U":                         "N03",
+  "Pepas Int. Choco y Frambuesa 250G X12U":                 "N04",
+  "Pepas Int. Limón y Amapola 250G X12U":                   "N05",
+  "Tapitas Int Cumple 250G X12U":                           "N06",
+};
+
+const parsearCSV = (texto) => {
+  // Soporta tanto tab como punto y coma como separador
+  const detectarSep = (linea) => linea.includes("\t") ? "\t" : linea.includes(";") ? ";" : "\t";
+  const lineasRaw = texto.trim().split("\n");
+  if(lineasRaw.length < 2) return {pedidos:[], errores:["Texto vacío o formato incorrecto"], clientesOmitidos:[]};
+
+  const sep = detectarSep(lineasRaw[0]);
+  const lineas = lineasRaw.map(l => l.split(sep).map(c => c.replace(/\r/g,"").trim()));
+
+  // Buscar fila de encabezados (la que tiene "Nombre Distribuidor" o "Distribuidor")
+  let filaHeader = -1;
+  let colCliente = -1;
+  let colEstado = -1;
+  for(let i = 0; i < Math.min(5, lineas.length); i++){
+    const ci = lineas[i].findIndex(c => /distribuidor|nombre.*cliente|cliente/i.test(c));
+    if(ci >= 0){ filaHeader = i; colCliente = ci; break; }
+  }
+  if(filaHeader === -1){ filaHeader = 0; colCliente = 4; }
+
+  const headers = lineas[filaHeader];
+  // Col estado: la que dice "Despachado" en encabezado, o col 1 por defecto
+  colEstado = headers.findIndex(h => /despachado|estado/i.test(h));
+  if(colEstado === -1) colEstado = 1;
+
+  // Mapear cada columna del encabezado a un productoId
+  const colsProd = []; // [{colIdx, prodId, prodNombre}]
+  headers.forEach((h, ci) => {
+    const prodId = CSV_HEADER_MAP[h] || CSV_HEADER_MAP[h.trim()];
+    if(prodId){
+      const prod = PRODUCTOS.find(p => p.id === prodId);
+      if(prod) colsProd.push({colIdx: ci, prodId, prodNombre: prod.nombre});
+    }
+  });
+
+  const pedidos = []; let id = 1;
+  const errores = []; const clientesOmitidos = [];
+
+  for(let i = filaHeader + 1; i < lineas.length; i++){
+    const fila = lineas[i];
+    if(fila.length < 3) continue;
+    const nombreCliente = fila[colCliente]?.trim();
+    if(!nombreCliente || nombreCliente === "") continue;
+
+    // Filtrar despachados
+    const estado = (fila[colEstado] || "").toLowerCase();
+    if(estado === "despachado"){ clientesOmitidos.push(nombreCliente); continue; }
+
+    let itemsCliente = 0;
+    colsProd.forEach(({colIdx, prodId, prodNombre}) => {
+      if(colIdx >= fila.length) return;
+      const val = fila[colIdx]?.replace(",",".").replace(/[^\d.]/g,"");
+      const cant = parseFloat(val);
+      if(!isNaN(cant) && cant > 0){
+        const prod = PRODUCTOS.find(p => p.id === prodId);
+        if(!prod) return;
+        const esLF = prod.marcaId === "LF_PANES" || prod.marcaId === "LF_DULCE";
+        if(esLF){
+          // Un ítem por unidad para el flujo de picking
+          for(let u = 0; u < Math.round(cant); u++){
+            pedidos.push({id:id++, cliente:nombreCliente, posicion:"", productoId:prodId,
+              productoNombre:prodNombre, marcaId:prod.marcaId, cantidad:1, entregado:0});
+          }
+        } else {
+          pedidos.push({id:id++, cliente:nombreCliente, posicion:"", productoId:prodId,
+            productoNombre:prodNombre, marcaId:prod.marcaId, cantidad:cant, entregado:0});
+        }
+        itemsCliente++;
+      }
+    });
+    if(itemsCliente === 0) errores.push(`${nombreCliente}: sin productos reconocidos`);
+  }
+
+  const colsNoMapeadas = headers.filter((h,i) => {
+    if(!h || i < 5) return false;
+    if(/mail|email|link|comentario|combo|@/i.test(h)) return false;
+    return !CSV_HEADER_MAP[h] && !CSV_HEADER_MAP[h.trim()];
+  });
+
+  if(pedidos.length === 0) errores.push("No se encontraron pedidos. Verificá que pegaste desde la fila de encabezados.");
+  return {pedidos, errores, clientesOmitidos, colsNoMapeadas};
+};
+
+// ── TOAST PICKING (cantidad editable, alerta exceso, faltante posible) ────────
+function ToastPicking({data, onDone}){
+  const [seg,setSeg]=useState(5);
+  const [extendido,setExtendido]=useState(false);
+  const [cantReal,setCantReal]=useState(1);
+  // data.totalCliente = total pedido para esta variedad en esta posición
+  // data.entregadoAntes = cuántas ya tiene confirmadas antes de esta
+  const restante = data.totalCliente - data.entregadoAntes; // cuántas faltan entregar
+  const esFaltante = cantReal === 0;
+  const esExceso = (data.entregadoAntes + cantReal) > data.totalCliente;
+  const exceso = esExceso ? (data.entregadoAntes + cantReal) - data.totalCliente : 0;
+
+  // Pausar countdown si hay exceso (requiere confirmación manual)
+  const pausarTimer = extendido || esExceso;
+
+  useEffect(()=>{
+    if(pausarTimer) return;
+    if(seg<=0){onDone(cantReal,"normal");return;}
+    const t=setTimeout(()=>setSeg(s=>s-1),1000);
+    return()=>clearTimeout(t);
+  },[seg,pausarTimer,onDone,cantReal]);
+
+  const confirmar=()=>{
+    if(esExceso){
+      onDone(cantReal,"agregado_manual");
+    } else if(esFaltante){
+      onDone(0,"faltante");
+    } else {
+      onDone(cantReal,"normal");
+    }
+  };
+
+  const colorBorde = esFaltante?"#ef4444":esExceso?"#f59e0b":"#22c55e";
+  const bgPrincipal = esFaltante?"#3a0a0a":esExceso?"#3a2a00":"#0f3a1a";
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:16}}>
+      <div style={{background:bgPrincipal,border:`2px solid ${colorBorde}`,borderRadius:20,padding:20,textAlign:"center",width:"100%",maxWidth:340,animation:"popIn 0.2s ease"}}>
+        <div style={{color:"#86efac",fontSize:11,fontWeight:700,letterSpacing:"0.1em",marginBottom:4}}>📍 LLEVAR A</div>
+        <div style={{color:"#4ade80",fontSize:68,fontWeight:900,lineHeight:1}}>{data.posicion}</div>
+        <div style={{color:"#f8fafc",fontSize:17,fontWeight:800,marginTop:4}}>{data.cliente}</div>
+        <div style={{color:"#64748b",fontSize:12,marginTop:1}}>{data.variedad}</div>
+
+        {/* Cantidad editable */}
+        <div style={{background:"rgba(0,0,0,0.3)",borderRadius:10,padding:"10px 12px",marginTop:10}}>
+          <div style={{color:"#94a3b8",fontSize:10,fontWeight:700,marginBottom:6}}>UNIDADES A ENTREGAR</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14}}>
+            <button onClick={()=>setCantReal(c=>Math.max(0,c-1))} style={{background:"rgba(0,0,0,0.4)",color:"#f8fafc",border:"1px solid #334155",borderRadius:8,width:42,height:42,fontSize:24,fontWeight:900,cursor:"pointer"}}>−</button>
+            <div style={{textAlign:"center",minWidth:64}}>
+              <div style={{color:esFaltante?"#ef4444":esExceso?"#f59e0b":"#f8fafc",fontSize:44,fontWeight:900,lineHeight:1}}>{cantReal}</div>
+              {esFaltante&&<div style={{color:"#ef4444",fontSize:10,fontWeight:700}}>FALTANTE</div>}
+              {esExceso&&<div style={{color:"#f59e0b",fontSize:10,fontWeight:700}}>+{exceso} EXTRA</div>}
+            </div>
+            <button onClick={()=>setCantReal(c=>c+1)} style={{background:"rgba(0,0,0,0.4)",color:"#f8fafc",border:"1px solid #334155",borderRadius:8,width:42,height:42,fontSize:24,fontWeight:900,cursor:"pointer"}}>+</button>
+          </div>
+
+          {/* Resumen ya tenía / total */}
+          <div style={{display:"flex",justifyContent:"space-around",marginTop:8,paddingTop:8,borderTop:"1px solid #ffffff11"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{color:"#22c55e",fontSize:16,fontWeight:900}}>{data.entregadoAntes}</div>
+              <div style={{color:"#475569",fontSize:10}}>Ya tenía</div>
+            </div>
+            <div style={{color:"#334155",fontSize:14,alignSelf:"center"}}>+{cantReal}=</div>
+            <div style={{textAlign:"center"}}>
+              <div style={{color:esExceso?"#f59e0b":"#f8fafc",fontSize:16,fontWeight:900}}>{data.entregadoAntes+cantReal}</div>
+              <div style={{color:"#475569",fontSize:10}}>de {data.totalCliente} ped.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Alerta de exceso */}
+        {esExceso&&(
+          <div style={{background:"#3a2500",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 12px",marginTop:10,textAlign:"left"}}>
+            <div style={{color:"#f59e0b",fontSize:13,fontWeight:800,marginBottom:4}}>⚠️ Atención</div>
+            <div style={{color:"#fcd34d",fontSize:12,lineHeight:1.5}}>
+              Este cliente tiene <strong>{data.totalCliente} pedido/s</strong> de esta variedad pero estás sumando <strong>{data.entregadoAntes+cantReal}</strong>. Eso es <strong>{exceso} extra</strong>.
+            </div>
+            <div style={{color:"#94a3b8",fontSize:11,marginTop:6}}>¿Es correcto? Si confirmás, quedará registrado como <strong style={{color:"#f59e0b"}}>producto agregado manualmente</strong>.</div>
+          </div>
+        )}
+
+        {/* Controles */}
+        {(!extendido&&!esExceso)?(
+          <div style={{marginTop:10}}>
+            {!esFaltante&&<>
+              <div style={{background:"rgba(0,0,0,0.3)",borderRadius:99,height:3,marginBottom:6,overflow:"hidden"}}>
+                <div style={{background:"#22c55e",height:"100%",width:`${(seg/5)*100}%`,transition:"width 1s linear"}}/>
+              </div>
+              <div style={{color:"#475569",fontSize:11,marginBottom:8}}>Cerrando en {seg}s...</div>
+            </>}
+            <button onClick={()=>setExtendido(true)} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>
+              🔍 Necesito buscar esta posición
+            </button>
+          </div>
+        ):(
+          <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+            <button onClick={confirmar} style={{
+              background:esFaltante?"#7f1d1d":esExceso?"#92400e":"#16a34a",
+              color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:800,cursor:"pointer"
+            }}>
+              {esFaltante?"⚠️ Registrar como faltante":esExceso?`✓ Sí, confirmar ${data.entregadoAntes+cantReal} unidades`:"✓ Listo, entregué"}
+            </button>
+            {esExceso&&<button onClick={()=>setCantReal(restante)} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"8px",fontSize:12,cursor:"pointer"}}>
+              ← Corregir a {restante} (lo pedido)
+            </button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PANTALLA LOGIN ────────────────────────────────────────────────────────────
+function Login({onLogin}){
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:56,marginBottom:8}}>📦</div>
+        <h1 style={{color:"#f8fafc",fontSize:28,fontWeight:900,letterSpacing:-1}}>WMS Picking</h1>
+        <p style={{color:"#64748b",margin:"8px 0 32px",fontSize:14}}>La Francia Panificación</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12,width:220,margin:"0 auto"}}>
+          {["Adrián","Compañero"].map(op=>(
+            <button key={op} onClick={()=>onLogin(op)} style={{...S.card,color:"#f8fafc",padding:"14px 24px",fontSize:16,fontWeight:700,cursor:"pointer",border:"1px solid #334155"}}>
+              👤 {op}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PANTALLA CARGAR PEDIDOS ───────────────────────────────────────────────────
+function CargarPedidos({onCargar, onDemo, onVolver}){
+  const [tab,setTab]=useState("manual");
+  const [clientes,setClientes]=useState([{nombre:"",posiciones:[""],items:[{prodId:"",cantidad:""}]}]);
+  const [csvText,setCsvText]=useState("");
+  const [csvError,setCsvError]=useState("");
+  const [csvPreview,setCsvPreview]=useState(null);
+
+  const addCliente=()=>setClientes(p=>[...p,{nombre:"",posiciones:[""],items:[{prodId:"",cantidad:""}]}]);
+  const delCliente=ci=>setClientes(p=>p.filter((_,i)=>i!==ci));
+  const updNombre=(ci,v)=>setClientes(p=>p.map((c,i)=>i===ci?{...c,nombre:v}:c));
+  const addPos=ci=>setClientes(p=>p.map((c,i)=>i===ci?{...c,posiciones:[...c.posiciones,""]}:c));
+  const updPos=(ci,pi,v)=>setClientes(p=>p.map((c,i)=>i===ci?{...c,posiciones:c.posiciones.map((x,j)=>j===pi?v:x)}:c));
+  const delPos=(ci,pi)=>setClientes(p=>p.map((c,i)=>i===ci?{...c,posiciones:c.posiciones.filter((_,j)=>j!==pi)}:c));
+  const addItem=ci=>setClientes(p=>p.map((c,i)=>i===ci?{...c,items:[...c.items,{prodId:"",cantidad:""}]}:c));
+  const delItem=(ci,ii)=>setClientes(p=>p.map((c,i)=>i===ci?{...c,items:c.items.filter((_,j)=>j!==ii)}:c));
+  const updItem=(ci,ii,f,v)=>setClientes(p=>p.map((c,i)=>i===ci?{...c,items:c.items.map((it,j)=>j===ii?{...it,[f]:v}:it)}:c));
+
+  const confirmarManual=()=>{
+    const pedidos=[]; let id=1;
+    clientes.forEach(c=>{
+      if(!c.nombre.trim()) return;
+      const poss=c.posiciones.filter(Boolean);
+      if(poss.length===0) poss.push("");
+      poss.forEach(pos=>{
+        c.items.forEach(it=>{
+          const prod=PRODUCTOS.find(p=>p.id===it.prodId);
+          if(!prod||!it.cantidad) return;
+          const cant=parseFloat(it.cantidad)||0;
+          const esLF=prod.marcaId==="LF_PANES"||prod.marcaId==="LF_DULCE";
+          if(esLF){
+            for(let u=0;u<Math.round(cant);u++)
+              pedidos.push({id:id++,cliente:c.nombre.trim(),posicion:pos,productoId:prod.id,productoNombre:prod.nombre,marcaId:prod.marcaId,cantidad:1,entregado:0});
+          } else {
+            pedidos.push({id:id++,cliente:c.nombre.trim(),posicion:pos,productoId:prod.id,productoNombre:prod.nombre,marcaId:prod.marcaId,cantidad:cant,entregado:0});
+          }
+        });
+      });
+    });
+    if(pedidos.length===0){alert("Completá al menos un pedido válido");return;}
+    onCargar(pedidos);
+  };
+
+  const procesarCSV=()=>{
+    if(!csvText.trim()){setCsvError("Pegá el contenido del Sheet primero");return;}
+    const {pedidos,errores,clientesOmitidos,colsNoMapeadas}=parsearCSV(csvText);
+    if(errores.length>0&&pedidos.length===0){setCsvError(errores.join(". "));return;}
+    setCsvError("");
+    // resumen por cliente: suma de unidades (cantidad), no líneas
+    const resumen={};
+    pedidos.forEach(p=>{resumen[p.cliente]=(resumen[p.cliente]||0)+p.cantidad;});
+    setCsvPreview({pedidos,resumen,errores,clientesOmitidos:clientesOmitidos||[],colsNoMapeadas:colsNoMapeadas||[]});
+  };
+
+  const prodsPorMarca=ORDEN_MARCAS.map(m=>({...m,prods:PRODUCTOS.filter(p=>p.marcaId===m.id)}));
+
+  if(csvPreview){
+    return (
+      <div style={{minHeight:"100vh",overflowY:"auto"}}>
+        <div style={{maxWidth:520,margin:"0 auto",padding:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,paddingTop:16}}>
+            <button onClick={()=>setCsvPreview(null)} style={{...S.card,color:"#94a3b8",padding:"7px 12px",fontSize:14,cursor:"pointer",border:"1px solid #334155"}}>← Volver</button>
+            <h2 style={{margin:0,fontSize:18,fontWeight:900}}>✅ Vista previa CSV</h2>
+          </div>
+          <div style={{...S.card,padding:14,marginBottom:12}}>
+            <div style={{color:"#22c55e",fontWeight:700,fontSize:16,marginBottom:8}}>
+              {Object.values(csvPreview.resumen).reduce((s,n)=>s+n,0)} unidades · {Object.keys(csvPreview.resumen).length} clientes
+            </div>
+            {Object.entries(csvPreview.resumen).map(([c,n])=>(
+              <div key={c} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #334155",fontSize:13}}>
+                <span style={{color:"#f8fafc"}}>{c}</span>
+                <span style={{color:"#64748b"}}>{n} u.</span>
+              </div>
+            ))}
+          </div>
+          {csvPreview.errores.length>0&&<div style={{background:"#713f12",borderRadius:8,padding:10,marginBottom:12,color:"#fcd34d",fontSize:12}}>{csvPreview.errores.join(". ")}</div>}
+          {csvPreview.clientesOmitidos?.length>0&&<div style={{background:"#14532d",borderRadius:8,padding:10,marginBottom:12,color:"#86efac",fontSize:12}}>✅ {csvPreview.clientesOmitidos.length} cliente/s "Despachado" omitidos: {csvPreview.clientesOmitidos.join(", ")}</div>}
+          {csvPreview.colsNoMapeadas?.length>0&&<div style={{background:"#1e3a5f",borderRadius:8,padding:10,marginBottom:12,color:"#93c5fd",fontSize:11}}>ℹ️ Columnas sin mapear (ignoradas): {csvPreview.colsNoMapeadas.slice(0,5).join(", ")}{csvPreview.colsNoMapeadas.length>5?` y ${csvPreview.colsNoMapeadas.length-5} más...`:""}</div>}
+          <button onClick={()=>onCargar(csvPreview.pedidos)} style={S.btnP}>✅ Confirmar e iniciar jornada</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh",overflowY:"auto"}}>
+      <div style={{maxWidth:520,margin:"0 auto",padding:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,paddingTop:16}}>
+          <button onClick={onVolver} style={{...S.card,color:"#94a3b8",padding:"7px 12px",fontSize:14,cursor:"pointer",border:"1px solid #334155"}}>← Volver</button>
+          <div>
+            <h2 style={{margin:0,fontSize:20,fontWeight:900}}>📋 Cargar Pedidos</h2>
+            <p style={{margin:0,color:"#64748b",fontSize:12}}>Ingresá los pedidos del día</p>
+          </div>
+        </div>
+        <div style={{display:"flex",background:"#1e293b",borderRadius:10,padding:3,marginBottom:16}}>
+          {[["manual","✍️ Manual"],["csv","📄 Pegar CSV"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{flex:1,background:tab===k?"#3b82f6":"transparent",color:tab===k?"#fff":"#64748b",border:"none",borderRadius:8,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+
+        {tab==="manual"&&<>
+          {clientes.map((c,ci)=>(
+            <div key={ci} style={{...S.card,padding:14,marginBottom:10}}>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <input placeholder="Nombre del cliente" value={c.nombre} onChange={e=>updNombre(ci,e.target.value)} style={{...S.input,flex:1}}/>
+                <button onClick={()=>delCliente(ci)} style={{background:"#7f1d1d",color:"#fca5a5",border:"none",borderRadius:7,padding:"8px 10px",cursor:"pointer"}}>✕</button>
+              </div>
+              <div style={{marginBottom:10}}>
+                <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>POSICIONES</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                  {c.posiciones.map((pos,pi)=>(
+                    <div key={pi} style={{display:"flex",gap:3}}>
+                      <select value={pos} onChange={e=>updPos(ci,pi,e.target.value)} style={{background:"#0f172a",border:"1px solid #334155",color:"#f8fafc",borderRadius:7,padding:"6px 8px",fontSize:13,fontWeight:700}}>
+                        <option value="">— Pos —</option>
+                        {TODAS_POS.map(p=><option key={p} value={p}>{p}</option>)}
+                      </select>
+                      {c.posiciones.length>1&&<button onClick={()=>delPos(ci,pi)} style={{background:"#7f1d1d",color:"#fca5a5",border:"none",borderRadius:5,padding:"4px 7px",fontSize:11,cursor:"pointer"}}>✕</button>}
+                    </div>
+                  ))}
+                  <button onClick={()=>addPos(ci)} style={{background:"#1e3a5f",color:"#3b82f6",border:"1px dashed #3b82f6",borderRadius:7,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>+ Pos</button>
+                </div>
+              </div>
+              <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>PRODUCTOS</div>
+              {c.items.map((it,ii)=>(
+                <div key={ii} style={{display:"flex",gap:6,marginBottom:6}}>
+                  <select value={it.prodId} onChange={e=>updItem(ci,ii,"prodId",e.target.value)} style={{flex:1,background:"#0f172a",border:"1px solid #334155",color:"#f8fafc",borderRadius:7,padding:"6px 8px",fontSize:12}}>
+                    <option value="">— Producto —</option>
+                    {prodsPorMarca.map(m=>(
+                      <optgroup key={m.id} label={m.label}>
+                        {m.prods.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <input type="number" min="1" step="1" placeholder="Cant" value={it.cantidad} onChange={e=>updItem(ci,ii,"cantidad",e.target.value)} style={{width:62,background:"#0f172a",border:"1px solid #334155",color:"#f8fafc",borderRadius:7,padding:"6px 8px",fontSize:13}}/>
+                  {c.items.length>1&&<button onClick={()=>delItem(ci,ii)} style={{background:"#7f1d1d",color:"#fca5a5",border:"none",borderRadius:5,padding:"4px 7px",fontSize:11,cursor:"pointer"}}>✕</button>}
+                </div>
+              ))}
+              <button onClick={()=>addItem(ci)} style={{background:"transparent",color:"#64748b",border:"1px dashed #334155",borderRadius:7,padding:"5px 12px",fontSize:12,cursor:"pointer",width:"100%"}}>+ Producto</button>
+            </div>
+          ))}
+          <button onClick={addCliente} style={{...S.btnS,color:"#3b82f6",border:"1px dashed #3b82f6",marginBottom:10}}>+ Agregar Cliente</button>
+          <button onClick={confirmarManual} style={S.btnP}>✅ Iniciar jornada</button>
+        </>}
+
+        {tab==="csv"&&(
+          <div>
+            <div style={{...S.card,padding:14,marginBottom:12,fontSize:13,color:"#94a3b8",lineHeight:1.7}}>
+              <strong style={{color:"#f8fafc"}}>Cómo importar desde Google Sheets:</strong><br/>
+              1. Abrí el Sheet de pedidos<br/>
+              2. Seleccioná todas las filas (incluyendo la fila de encabezados)<br/>
+              3. <strong style={{color:"#f8fafc"}}>Ctrl+C</strong> (o Cmd+C en Mac)<br/>
+              4. Hacé clic en el área de abajo y <strong style={{color:"#f8fafc"}}>Ctrl+V</strong>
+            </div>
+            <textarea
+              placeholder="Pegá acá el contenido del Sheet..."
+              value={csvText}
+              onChange={e=>{setCsvText(e.target.value);setCsvError("");}}
+              style={{width:"100%",height:180,background:"#1e293b",border:"1px solid #334155",color:"#f8fafc",borderRadius:10,padding:12,fontSize:12,fontFamily:"monospace",resize:"vertical",display:"block"}}
+            />
+            {csvError&&<div style={{color:"#ef4444",fontSize:12,marginTop:6,padding:"8px 10px",background:"#7f1d1d",borderRadius:7}}>{csvError}</div>}
+            <button onClick={procesarCSV} style={{...S.btnP,marginTop:10}}>🔍 Procesar CSV</button>
+          </div>
+        )}
+        <button onClick={onDemo} style={{...S.btnS,marginTop:10}}>🧪 Usar datos de demo</button>
+      </div>
+    </div>
+  );
+}
+
+// ── ASIGNACIÓN POSICIONES ─────────────────────────────────────────────────────
+function AsignacionPosiciones({pedidos, setPedidos, onConfirmar, onVolver}){
+  const clientesUnicos=[...new Set(pedidos.map(p=>p.cliente))];
+  const [asig,setAsig]=useState(()=>{
+    const m={};
+    clientesUnicos.forEach(c=>{
+      const poss=[...new Set(pedidos.filter(p=>p.cliente===c).map(p=>p.posicion).filter(Boolean))];
+      m[c]=poss.length?poss:[""];
+    });
+    return m;
+  });
+  const addPos=c=>setAsig(p=>({...p,[c]:[...p[c],""]}));
+  const updPos=(c,i,v)=>setAsig(p=>({...p,[c]:p[c].map((x,j)=>j===i?v:x)}));
+  const delPos=(c,i)=>setAsig(p=>({...p,[c]:p[c].filter((_,j)=>j!==i)}));
+  const usoPorPos={};
+  Object.values(asig).flat().filter(Boolean).forEach(p=>{usoPorPos[p]=(usoPorPos[p]||0)+1;});
+
+  const guardar=()=>{
+    const expandidos=[];
+    pedidos.forEach(p=>{
+      const poss=(asig[p.cliente]||[""]).filter(Boolean);
+      if(poss.length===0){expandidos.push({...p,posicion:""});return;}
+      if(poss.length===1){expandidos.push({...p,posicion:poss[0]});return;}
+      poss.forEach((pos,idx)=>{
+        if(idx===0) expandidos.push({...p,posicion:pos});
+      });
+    });
+    onConfirmar(expandidos);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",overflowY:"auto"}}>
+      <div style={{maxWidth:520,margin:"0 auto",padding:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,paddingTop:16}}>
+          <button onClick={onVolver} style={{...S.card,color:"#94a3b8",padding:"7px 12px",fontSize:14,cursor:"pointer",border:"1px solid #334155"}}>← Volver</button>
+          <div>
+            <h2 style={{margin:0,fontSize:20,fontWeight:900}}>🗺️ Posiciones</h2>
+            <p style={{margin:0,color:"#64748b",fontSize:12}}>{clientesUnicos.length} clientes</p>
+          </div>
+        </div>
+        {/* Mapa mini */}
+        <div style={{...S.card,padding:10,marginBottom:14}}>
+          <div style={{fontSize:10,color:"#475569",fontWeight:700,marginBottom:6}}>DEPÓSITO — 2 hileras × 15 palets · Zona 1: 1-5 · Zona 2: 6-10 · Zona 3: 11-15</div>
+          <div style={{display:"flex",gap:4}}>
+            {["A","B"].map((lado,li)=>(
+              <React.Fragment key={lado}>
+                {li===1&&<div style={{width:16,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{writingMode:"vertical-rl",fontSize:8,color:"#334155",fontWeight:700,letterSpacing:2}}>PASILLO</div></div>}
+                <div style={{display:"flex",flexDirection:"column",gap:2,flex:1}}>
+                  {Array.from({length:15},(_,i)=>`${lado}${i+1}`).map(pos=>{
+                    const uso=usoPorPos[pos]||0;
+                    const zona=zonaDePos(pos);
+                    const zonaBg=zona===1?"#1a3a1a":zona===2?"#1a2a3a":"#2a1a3a";
+                    return <div key={pos} style={{background:uso===0?zonaBg:uso===1?"#1e3a5f":"#1e4080",border:`1px solid ${uso===0?"#334155":uso===1?"#3b82f6":"#60a5fa"}`,borderRadius:3,padding:"2px 4px",fontSize:9,fontWeight:700,color:uso===0?"#475569":"#93c5fd",textAlign:"center"}}>{pos}{uso>1?` ×${uso}`:""}</div>;
+                  })}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        {clientesUnicos.map(cliente=>{
+          const prods=[...new Set(pedidos.filter(p=>p.cliente===cliente).map(p=>p.productoId))].length;
+          const poss=asig[cliente]||[""];
+          return (
+            <div key={cliente} style={{...S.card,padding:12,marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div><div style={{fontWeight:700,fontSize:14}}>{cliente}</div><div style={{color:"#64748b",fontSize:11}}>{prods} variedades</div></div>
+                <button onClick={()=>addPos(cliente)} style={{background:"#1e3a5f",color:"#3b82f6",border:"1px dashed #3b82f6",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>+ Posición</button>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {poss.map((pos,pi)=>(
+                  <div key={pi} style={{display:"flex",gap:3,alignItems:"center"}}>
+                    <select value={pos} onChange={e=>updPos(cliente,pi,e.target.value)} style={{background:"#0f172a",color:"#f8fafc",border:"1px solid #475569",borderRadius:6,padding:"6px 8px",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                      <option value="">— Pos —</option>
+                      {TODAS_POS.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>
+                    {poss.length>1&&<button onClick={()=>delPos(cliente,pi)} style={{background:"#7f1d1d",color:"#fca5a5",border:"none",borderRadius:5,padding:"4px 7px",fontSize:11,cursor:"pointer"}}>✕</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        <div style={{height:12}}/>
+        <button onClick={guardar} style={{...S.btnP,background:"#e85d04",marginBottom:16}}>✅ Confirmar y comenzar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── PALET NUEVO ───────────────────────────────────────────────────────────────
+function PaletNuevo({marcaId, pedidos, onCerrar}){
+  const [seleccion,setSeleccion]=useState([]);
+  const [resultado,setResultado]=useState(null);
+
+  const prodsDisponibles=PRODUCTOS.filter(p=>p.marcaId===marcaId);
+
+  const toggleProd=id=>setSeleccion(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+
+  const calcularZona=()=>{
+    if(seleccion.length===0) return;
+    // Para cada variedad seleccionada, ver qué posiciones todavía necesitan esa variedad
+    const posNecesitan=new Set();
+    pedidos.forEach(p=>{
+      if(seleccion.includes(p.productoId)&&estadoItem(p)!=="completo") posNecesitan.add(p.posicion);
+    });
+
+    if(posNecesitan.size===0){setResultado({zona:null,msg:"Todas las posiciones para estas variedades ya están cubiertas.",posiciones:[]});return;}
+
+    // Contar cuántas posiciones necesitan por zona
+    const contZona={1:0,2:0,3:0};
+    posNecesitan.forEach(pos=>{if(pos)contZona[zonaDePos(pos)]++;});
+
+    // Recomendar la zona con más demanda que aún no esté completa
+    // Verificar zonas completas (todos los ítems de esa zona entregados)
+    const zonaCompleta=z=>{
+      const posDeLaZona=TODAS_POS.filter(p=>zonaDePos(p)===z);
+      return posDeLaZona.every(pos=>{
+        const items=pedidos.filter(p=>p.posicion===pos&&seleccion.includes(p.productoId));
+        return items.length===0||items.every(p=>estadoItem(p)==="completo");
+      });
+    };
+
+    let zonaRec=null;
+    // Preferir zona 1 si tiene demanda, sino 2, sino 3
+    for(let z=1;z<=3;z++){
+      if(contZona[z]>0&&!zonaCompleta(z)){zonaRec=z;break;}
+    }
+    if(!zonaRec) zonaRec=3;
+
+    const posDeZona=[...posNecesitan].filter(p=>p&&zonaDePos(p)===zonaRec);
+    setResultado({zona:zonaRec,msg:`Recomendamos ubicar este palet en la Zona ${zonaRec}`,posiciones:posDeZona,contZona});
+  };
+
+  const zonaColor={1:"#22c55e",2:"#3b82f6",3:"#b5179e"};
+  const zonaLabel={1:"Zona 1 (A1-A5 / B1-B5)",2:"Zona 2 (A6-A10 / B6-B10)",3:"Zona 3 (A11-A15 / B11-B15)"};
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:9998}}>
+      <div style={{background:"#1e293b",borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto",animation:"fadeIn 0.25s ease"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div>
+            <h3 style={{margin:0,fontSize:18,fontWeight:900}}>🪵 Palet Nuevo</h3>
+            <p style={{margin:0,color:"#64748b",fontSize:12}}>¿Qué variedades tiene este palet?</p>
+          </div>
+          <button onClick={onCerrar} style={{background:"#0f172a",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:14}}>✕</button>
+        </div>
+
+        {!resultado?(
+          <>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+              {prodsDisponibles.map(p=>{
+                const sel=seleccion.includes(p.id);
+                const nc=NOMBRE_CORTO[p.id]||p.nombre.split(" ").slice(2,4).join(" ");
+                return (
+                  <button key={p.id} onClick={()=>toggleProd(p.id)} style={{
+                    background:sel?"#e85d04":"#0f172a",
+                    color:sel?"#fff":"#94a3b8",
+                    border:`2px solid ${sel?"#e85d04":"#334155"}`,
+                    borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",
+                    transition:"all 0.15s",
+                  }}>{nc}</button>
+                );
+              })}
+            </div>
+            {seleccion.length>0&&(
+              <button onClick={calcularZona} style={{...S.btnP,background:"#e85d04"}}>
+                📍 Ver dónde ubicar el palet ({seleccion.length} variedad/es)
+              </button>
+            )}
+          </>
+        ):(
+          <div style={{animation:"popIn 0.2s ease"}}>
+            {resultado.zona?(
+              <>
+                <div style={{background:"#0f172a",borderRadius:12,padding:20,textAlign:"center",marginBottom:14,border:`2px solid ${zonaColor[resultado.zona]}`}}>
+                  <div style={{color:zonaColor[resultado.zona],fontSize:13,fontWeight:700,marginBottom:4}}>UBICAR EN</div>
+                  <div style={{color:zonaColor[resultado.zona],fontSize:48,fontWeight:900,lineHeight:1}}>ZONA {resultado.zona}</div>
+                  <div style={{color:"#94a3b8",fontSize:13,marginTop:6}}>{zonaLabel[resultado.zona]}</div>
+                </div>
+                {resultado.posiciones.length>0&&(
+                  <div style={{...S.card,padding:12,marginBottom:14}}>
+                    <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>POSICIONES QUE NECESITAN ESTAS VARIEDADES:</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {resultado.posiciones.map(pos=>(
+                        <span key={pos} style={{background:zonaColor[resultado.zona]+"33",color:zonaColor[resultado.zona],borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:700}}>{pos}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {resultado.contZona&&(
+                  <div style={{display:"flex",gap:8,marginBottom:14}}>
+                    {[1,2,3].map(z=>(
+                      <div key={z} style={{flex:1,...S.card,padding:10,textAlign:"center",border:`1px solid ${z===resultado.zona?zonaColor[z]:"#334155"}`}}>
+                        <div style={{color:zonaColor[z],fontWeight:900,fontSize:18}}>{resultado.contZona[z]}</div>
+                        <div style={{color:"#64748b",fontSize:10}}>Zona {z}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ):(
+              <div style={{...S.card,padding:16,textAlign:"center",marginBottom:14}}>
+                <div style={{fontSize:32}}>✅</div>
+                <div style={{color:"#22c55e",fontWeight:700,marginTop:8}}>{resultado.msg}</div>
+              </div>
+            )}
+            <button onClick={()=>setResultado(null)} style={{...S.btnS,marginBottom:8}}>← Cambiar variedades</button>
+            <button onClick={onCerrar} style={S.btnP}>Listo</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PICKING LA FRANCIA ────────────────────────────────────────────────────────
+function PickingLaFrancia({marcaConfig, pedidos, setPedidos, onMarcaCompleta, addModif, claimItem, operario}){
+  const [toast,setToast]=useState(null);
+  const [ultimaPos,setUltimaPos]=useState(null);
+  const [mostrarPalet,setMostrarPalet]=useState(false);
+  const col=marcaConfig.color;
+
+  const prodsPend=[...new Set(
+    pedidos.filter(p=>p.marcaId===marcaConfig.id&&estadoItem(p)!=="completo").map(p=>p.productoId)
+  )].map(id=>{
+    const prod=PRODUCTOS.find(x=>x.id===id);
+    const items=pedidos.filter(p=>p.productoId===id&&estadoItem(p)!=="completo");
+    return {...prod,items,pendientes:items.length};
+  });
+
+  // El operario toca una variedad → intenta tomar el ítem más urgente vía lock Firebase
+  const handleTengoEste=prod=>{
+    // Ordenar candidatos: parciales primero, luego por cercanía
+    const candidatos=[...prod.items].sort((a,b)=>{
+      const ea=estadoItem(a),eb=estadoItem(b);
+      if(ea==="parcial"&&eb!=="parcial") return -1;
+      if(eb==="parcial"&&ea!=="parcial") return 1;
+      return POS_ORD.indexOf(a.posicion)-POS_ORD.indexOf(b.posicion);
+    });
+
+    const intentar=(idx)=>{
+      if(idx>=candidatos.length) return; // no quedan candidatos
+      const dest=candidatos[idx];
+      const entregadosAntesCliente=pedidos.filter(p=>
+        p.productoId===prod.id&&p.cliente===dest.cliente&&p.posicion===dest.posicion&&estadoItem(p)==="completo"
+      ).length;
+      const totalClienteVariedad=pedidos.filter(p=>
+        p.productoId===prod.id&&p.cliente===dest.cliente&&p.posicion===dest.posicion
+      ).length;
+
+      // Intentar tomar el lock — si otro llegó primero, pasa al siguiente candidato
+      claimItem(dest.id, operario||"?", ()=>{
+        setToast({
+          pedidoId:dest.id, productoId:prod.id, posicion:dest.posicion,
+          cliente:dest.cliente, variedad:NOMBRE_CORTO[prod.id]||prod.nombre,
+          entregadoAntes:entregadosAntesCliente, totalCliente:totalClienteVariedad,
+        });
+      }, ()=>intentar(idx+1)); // onFail: intentar siguiente
+    };
+
+    intentar(0);
+  };
+
+  const handleToastDone=(cantReal, tipo)=>{
+    const {pedidoId,posicion,cliente,variedad,productoId}=toast;
+    const esFaltante=tipo==="faltante";
+    const esAgregado=tipo==="agregado_manual";
+    setPedidos(prev=>prev.map(p=>{
+      if(p.id!==pedidoId) return p;
+      return {...p, entregado:cantReal, esFaltante, esAgregado};
+    }));
+    if(tipo!=="normal"){
+      addModif({tipo:"picking",pedidoId,productoId,posicion,cliente,variedad,
+        cantOriginal:1,cantReal,esFaltante,esAgregado,
+        tipoMod:esAgregado?"agregado_manual":"faltante"});
+    }
+    setUltimaPos({posicion,cliente,variedad,cantReal,esFaltante,esAgregado});
+    setToast(null);
+  };
+
+  const totalPend=prodsPend.reduce((s,p)=>s+p.pendientes,0);
+
+  return (
+    <div style={{paddingBottom:20}}>
+      {toast&&<ToastPicking data={toast} onDone={handleToastDone}/>}
+      {mostrarPalet&&<PaletNuevo marcaId={marcaConfig.id} pedidos={pedidos} onCerrar={()=>setMostrarPalet(false)}/>}
+
+      {/* Última posición entregada */}
+      {ultimaPos&&(
+        <div style={{background:ultimaPos.esFaltante?"#3a0a0a":"#0f3a1a",borderBottom:`1px solid ${ultimaPos.esFaltante?"#ef444433":"#22c55e33"}`,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,animation:"fadeIn 0.3s ease"}}>
+          <span style={{fontSize:13,color:"#475569"}}>Última:</span>
+          <span style={{color:ultimaPos.esFaltante?"#f87171":"#4ade80",fontWeight:700,fontSize:14}}>{ultimaPos.posicion}</span>
+          <span style={{color:"#64748b",fontSize:12}}>— {ultimaPos.cliente}</span>
+          <span style={{color:"#475569",fontSize:11,marginLeft:"auto"}}>{ultimaPos.variedad}</span>
+          {ultimaPos.esFaltante&&<span style={{color:"#ef4444",fontSize:11,fontWeight:700}}>⚠️ FALTANTE</span>}
+        </div>
+      )}
+
+      {/* Botón palet nuevo */}
+      <div style={{padding:"10px 16px 0",display:"flex",gap:8}}>
+        <button onClick={()=>setMostrarPalet(true)} style={{
+          flex:1,background:"#1e293b",border:"1px solid #e85d04",color:"#e85d04",
+          borderRadius:9,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+        }}>
+          🪵 Palet nuevo — ¿dónde ubicarlo?
+        </button>
+      </div>
+
+      {/* Instrucción */}
+      <div style={{padding:"10px 16px 4px",color:"#64748b",fontSize:12}}>
+        Tocá la variedad que tenés en la mano ({totalPend} unidades pendientes)
+      </div>
+
+      {/* Grilla de variedades */}
+      <div style={{padding:"0 16px",display:"flex",flexWrap:"wrap",gap:8}}>
+        {prodsPend.length===0?(
+          <div style={{width:"100%",textAlign:"center",padding:40}}>
+            <div style={{fontSize:40}}>🎉</div>
+            <div style={{color:"#22c55e",fontWeight:700,fontSize:16,marginTop:8}}>¡{marcaConfig.label} completo!</div>
+            <button onClick={onMarcaCompleta} style={{marginTop:16,background:col,color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:15,fontWeight:900,cursor:"pointer"}}>Siguiente marca →</button>
+          </div>
+        ):(
+          prodsPend.map(prod=>{
+            const nc=NOMBRE_CORTO[prod.id]||prod.nombre.split(" ").slice(2,4).join(" ");
+            return (
+              <button key={prod.id} onClick={()=>handleTengoEste(prod)} style={{
+                flex:"1 1 calc(50% - 4px)",minWidth:130,
+                background:"#1e293b",border:`2px solid ${col}33`,
+                borderRadius:10,padding:"14px 10px",
+                textAlign:"center",cursor:"pointer",
+                transition:"all 0.15s",
+              }}
+                onMouseEnter={e=>{e.currentTarget.style.background="#273347";e.currentTarget.style.borderColor=col;}}
+                onMouseLeave={e=>{e.currentTarget.style.background="#1e293b";e.currentTarget.style.borderColor=col+"33";}}
+              >
+                <div style={{color:"#f8fafc",fontSize:15,fontWeight:800}}>{nc}</div>
+                <div style={{color:col,fontSize:12,fontWeight:700,marginTop:4}}>{prod.pendientes} pend.</div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── DISTRIBUCIÓN OTRAS MARCAS ─────────────────────────────────────────────────
+function Distribucion({marcaConfig, pedidos, setPedidos, onMarcaCompleta, addModif}){
+  const [prodActivo,setProdActivo]=useState(null);
+  // cantEdits: {pedidoId: cantidadEditada}
+  const [cantEdits,setCantEdits]=useState({});
+  const col=marcaConfig.color;
+  const itemsPend=pedidos.filter(p=>p.marcaId===marcaConfig.id&&estadoItem(p)!=="completo");
+  const prodsPend=[...new Set(itemsPend.map(p=>p.productoId))].map(id=>{
+    const p=PRODUCTOS.find(x=>x.id===id);
+    const items=[...itemsPend.filter(x=>x.productoId===id)].sort((a,b)=>POS_ORD.indexOf(a.posicion)-POS_ORD.indexOf(b.posicion));
+    return {...p,items,totalNec:items.reduce((s,i)=>s+(i.cantidad-i.entregado),0)};
+  });
+
+  const getCantEdit=(item)=> cantEdits[item.id]!==undefined ? cantEdits[item.id] : (item.cantidad-item.entregado);
+  const setCantEdit=(id,val)=>setCantEdits(prev=>({...prev,[id]:Math.max(0,val)}));
+
+  const confirmarProd=prodId=>{
+    const prod=prodsPend.find(p=>p.id===prodId);
+    setPedidos(prev=>prev.map(p=>{
+      if(p.productoId!==prodId||p.marcaId!==marcaConfig.id) return p;
+      const cantOrig=p.cantidad-p.entregado;
+      const cantR=cantEdits[p.id]!==undefined?cantEdits[p.id]:cantOrig;
+      const esFaltante=cantR<cantOrig;
+      const esAgregado=cantR>cantOrig;
+      if(cantR!==cantOrig){
+        addModif({tipo:"distribucion",pedidoId:p.id,productoId:p.productoId,
+          posicion:p.posicion,cliente:p.cliente,variedad:prod?.nombre||"",
+          cantOriginal:cantOrig,cantReal:cantR,esFaltante,esAgregado,
+          tipoMod:esAgregado?"agregado_manual":"faltante"});
+      }
+      return {...p,entregado:p.entregado+cantR,esFaltante,esAgregado};
+    }));
+    setProdActivo(null);
+    setCantEdits({});
+  };
+
+  if(prodActivo){
+    const prod=prodsPend.find(p=>p.id===prodActivo);
+    if(!prod){setProdActivo(null);return null;}
+    const totalReal=prod.items.reduce((s,item)=>s+getCantEdit(item),0);
+    const totalOrig=prod.totalNec;
+    const hayFaltante=totalReal<totalOrig;
+    return (
+      <div style={{padding:16}}>
+        <button onClick={()=>setProdActivo(null)} style={{background:"transparent",color:"#64748b",border:"none",fontSize:13,cursor:"pointer",marginBottom:12,padding:0}}>← Volver a lista</button>
+        <div style={{...S.card,padding:14,borderLeft:`4px solid ${col}`,marginBottom:12}}>
+          <div style={{fontSize:11,color:col,fontWeight:700,letterSpacing:"0.05em"}}>{marcaConfig.label.toUpperCase()}</div>
+          <div style={{color:"#f8fafc",fontWeight:700,fontSize:14,marginTop:4,lineHeight:1.3}}>{prod.nombre}</div>
+          <div style={{display:"flex",gap:16,marginTop:8,alignItems:"center"}}>
+            <div><span style={{color:"#94a3b8",fontSize:11}}>Pedido: </span><span style={{color:"#f59e0b",fontWeight:900,fontSize:16}}>{totalOrig}</span></div>
+            <div><span style={{color:"#94a3b8",fontSize:11}}>A entregar: </span><span style={{color:hayFaltante?"#ef4444":"#22c55e",fontWeight:900,fontSize:16}}>{totalReal}</span></div>
+            {hayFaltante&&<span style={{color:"#ef4444",fontSize:11,fontWeight:700}}>⚠️ {totalOrig-totalReal} faltante/s</span>}
+          </div>
+        </div>
+        <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,marginBottom:8}}>MÁS CERCANO → MÁS LEJANO · Editá las cantidades si hay faltantes</div>
+        {prod.items.map((item,idx)=>{
+          const cantE=getCantEdit(item);
+          const cantOrig=item.cantidad-item.entregado;
+          const esFalt=cantE<cantOrig;
+          const esAgreg=cantE>cantOrig;
+          return (
+            <div key={item.id} style={{...S.card,padding:"12px 14px",marginBottom:8,borderLeft:`3px solid ${idx===0?col:esFalt?"#ef4444":esAgreg?"#f59e0b":"#334155"}`}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{background:idx===0?col:esFalt?"#7f1d1d":esAgreg?"#92400e":"#334155",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:16,fontWeight:900,minWidth:44,textAlign:"center"}}>{item.posicion||"—"}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#f8fafc",fontWeight:600,fontSize:14}}>{item.cliente}</div>
+                  <div style={{color:"#64748b",fontSize:11}}>{idx===0?"📍 Más cercano":`Posición #${idx+1}`}</div>
+                </div>
+                {/* Cantidad editable */}
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <button onClick={()=>setCantEdit(item.id,cantE-1)} style={{background:"#0f172a",color:esFalt?"#ef4444":"#94a3b8",border:`1px solid ${esFalt?"#ef4444":"#334155"}`,borderRadius:6,width:32,height:32,fontSize:18,fontWeight:900,cursor:"pointer"}}>−</button>
+                  <div style={{textAlign:"center",minWidth:36}}>
+                    <div style={{color:esFalt?"#ef4444":esAgreg?"#f59e0b":"#f59e0b",fontSize:22,fontWeight:900,lineHeight:1}}>{cantE}</div>
+                    {cantE!==cantOrig&&<div style={{color:"#64748b",fontSize:9}}>ped:{cantOrig}</div>}
+                  </div>
+                  <button onClick={()=>setCantEdit(item.id,cantE+1)} style={{background:"#0f172a",color:esAgreg?"#f59e0b":"#94a3b8",border:`1px solid ${esAgreg?"#f59e0b":"#334155"}`,borderRadius:6,width:32,height:32,fontSize:18,fontWeight:900,cursor:"pointer"}}>+</button>
+                </div>
+              </div>
+              {cantE===0&&<div style={{background:"#3a0a0a",borderRadius:6,padding:"5px 8px",marginTop:6,color:"#f87171",fontSize:11,fontWeight:700}}>⚠️ Se registrará como FALTANTE TOTAL para {item.cliente}</div>}
+              {esAgreg&&<div style={{background:"#3a2500",borderRadius:6,padding:"5px 8px",marginTop:6,color:"#fcd34d",fontSize:11,fontWeight:700}}>⚠️ Se registrará como PRODUCTO AGREGADO MANUALMENTE a {item.cliente} (+{cantE-cantOrig} extra)</div>}
+            </div>
+          );
+        })}
+        <div style={{height:12}}/>
+        <button onClick={()=>confirmarProd(prodActivo)} style={{...S.btnP,background:hayFaltante?"#b45309":"#16a34a"}}>
+          {hayFaltante?`⚠️ Confirmar con ${totalOrig-totalReal} faltante/s`:"✓ Producto distribuido"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{padding:16}}>
+      {prodsPend.length===0?(
+        <div style={{textAlign:"center",padding:40}}>
+          <div style={{fontSize:40}}>🎉</div>
+          <div style={{color:"#22c55e",fontWeight:700,fontSize:16,marginTop:8}}>¡{marcaConfig.label} completo!</div>
+          <button onClick={onMarcaCompleta} style={{marginTop:16,background:col,color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:15,fontWeight:900,cursor:"pointer"}}>Siguiente marca →</button>
+        </div>
+      ):(
+        <>
+          <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,marginBottom:10}}>PRODUCTOS PENDIENTES — {prodsPend.length}</div>
+          {prodsPend.map(prod=>(
+            <button key={prod.id} onClick={()=>setProdActivo(prod.id)} className="hov" style={{width:"100%",background:"#1e293b",border:`1px solid #334155`,borderLeft:`4px solid ${col}`,borderRadius:10,padding:"12px 14px",textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{color:"#f8fafc",fontSize:13,fontWeight:600,lineHeight:1.3}}>{prod.nombre}</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:3}}>{prod.items.length} destinos · {prod.items.map(i=>i.posicion||"—").join(", ")}</div>
+              </div>
+              <div style={{background:"#0f172a",color:"#f59e0b",borderRadius:8,padding:"6px 12px",fontSize:20,fontWeight:900,flexShrink:0}}>{prod.totalNec}</div>
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── MAPA ──────────────────────────────────────────────────────────────────────
+function MapaDeposito({pedidos}){
+  const estPorPos={};
+  TODAS_POS.forEach(pos=>{
+    const ps=pedidos.filter(p=>p.posicion===pos);
+    if(!ps.length){estPorPos[pos]="vacio";return;}
+    if(ps.every(p=>estadoItem(p)==="completo"))estPorPos[pos]="completo";
+    else if(ps.some(p=>p.entregado>0))estPorPos[pos]="parcial";
+    else estPorPos[pos]="pendiente";
+  });
+  const C={vacio:{bg:"#0f172a",b:"#1e293b",c:"#334155"},pendiente:{bg:"#7f1d1d",b:"#ef4444",c:"#fca5a5"},parcial:{bg:"#713f12",b:"#f59e0b",c:"#fcd34d"},completo:{bg:"#14532d",b:"#22c55e",c:"#86efac"}};
+  return (
+    <div style={{padding:16}}>
+      <div style={{display:"flex",gap:5}}>
+        {["A","B"].map((lado,li)=>(
+          <React.Fragment key={lado}>
+            {li===1&&<div style={{width:18,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{writingMode:"vertical-rl",fontSize:8,color:"#334155",fontWeight:700,letterSpacing:2}}>PASILLO</div></div>}
+            <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
+              <div style={{textAlign:"center",fontSize:10,color:"#475569",fontWeight:700,marginBottom:2}}>LADO {lado}</div>
+              {Array.from({length:15},(_,i)=>`${lado}${i+1}`).map(pos=>{
+                const est=estPorPos[pos],c=C[est];
+                const cls=[...new Set(pedidos.filter(p=>p.posicion===pos).map(p=>p.cliente))];
+                const zona=zonaDePos(pos);
+                const zonaBorder=zona===1?"#22c55e33":zona===2?"#3b82f633":"#b5179e33";
+                return (
+                  <div key={pos} style={{background:c.bg,border:`1px solid ${est==="vacio"?zonaBorder:c.b}`,borderRadius:5,padding:"4px 3px",textAlign:"center",fontSize:10,fontWeight:700,color:c.c,minHeight:30}}>
+                    <div>{pos}</div>
+                    {cls[0]&&<div style={{fontSize:8,opacity:0.8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls[0]}{cls.length>1?` +${cls.length-1}`:""}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:10,marginTop:12,justifyContent:"center",flexWrap:"wrap"}}>
+        {[["pendiente","🔴 Pend."],["parcial","🟡 Parcial"],["completo","🟢 Listo"],["vacio","⚫ Vacío"]].map(([k,l])=>(
+          <span key={k} style={{fontSize:11,color:"#64748b"}}>{l}</span>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:8,justifyContent:"center"}}>
+        {[["#22c55e","Z1: 1-5"],["#3b82f6","Z2: 6-10"],["#b5179e","Z3: 11-15"]].map(([c,l])=>(
+          <span key={l} style={{fontSize:10,color:c,fontWeight:700}}>{l}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── REPORTE ADMIN ─────────────────────────────────────────────────────────────
+function Reporte({pedidos, modifs, operario}){
+  const [verTab,setVerTab]=useState("resumen"); // resumen | faltantes | agregados | clientes
+
+  // Calcular datos
+  const totalPed=pedidos.length;
+  const entregadosOk=pedidos.filter(p=>estadoItem(p)==="completo"&&!p.esFaltante&&!p.esAgregado).length;
+  const faltantes=modifs.filter(m=>m.tipoMod==="faltante");
+  const agregados=modifs.filter(m=>m.tipoMod==="agregado_manual");
+
+  // Agrupar por cliente para vista admin
+  const clientesUnicos=[...new Set(modifs.map(m=>m.cliente))];
+  const porCliente=clientesUnicos.map(cliente=>{
+    const mods=modifs.filter(m=>m.cliente===cliente);
+    const falt=mods.filter(m=>m.tipoMod==="faltante");
+    const agreg=mods.filter(m=>m.tipoMod==="agregado_manual");
+    return {cliente,falt,agreg};
+  });
+
+  const exportarTSV=()=>{
+    const fecha=new Date().toLocaleDateString("es-AR");
+    const hora=new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    const fechaHora=`${fecha} ${hora}`;
+    // Encabezado
+    let tsv="Fecha\tOperario\tCliente\tPosición\tMarca\tProducto\tCant. Pedida\tCant. Entregada\tEstado\n";
+    // Todos los ítems
+    pedidos.forEach(p=>{
+      const estado=p.esFaltante?"FALTANTE":p.esAgregado?"AGREGADO MANUAL":estadoItem(p)==="completo"?"OK":"PENDIENTE";
+      const marca=ORDEN_MARCAS.find(m=>m.id===p.marcaId)?.label||p.marcaId;
+      tsv+=`${fechaHora}\t${operario}\t${p.cliente}\t${p.posicion||"—"}\t${marca}\t${p.productoNombre}\t${p.cantidad}\t${p.entregado}\t${estado}\n`;
+    });
+    // Modificaciones al final
+    if(modifs.length>0){
+      tsv+="\n";
+      tsv+="Fecha\tOperario\tCliente\tPosición\tProducto\tCant. Original\tCant. Real\tTipo\n";
+      modifs.forEach(m=>{
+        tsv+=`${fechaHora}\t${operario}\t${m.cliente}\t${m.posicion||"—"}\t${m.variedad}\t${m.cantOriginal}\t${m.cantReal}\t${m.tipoMod==="faltante"?"FALTANTE":"AGREGADO MANUAL"}\n`;
+      });
+    }
+    const b=new Blob(["\ufeff"+tsv],{type:"text/tab-separated-values;charset=utf-8"});
+    const u=URL.createObjectURL(b);const a=document.createElement("a");
+    a.href=u;a.download=`wms_${fecha.replace(/\//g,"-")}_${operario}.tsv`;a.click();URL.revokeObjectURL(u);
+  };
+
+  const exportar=()=>{
+    const fecha=new Date().toLocaleDateString("es-AR");
+    const hora=new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    let txt=`╔══════════════════════════════════════════════╗\n`;
+    txt+=`  REPORTE DE DISTRIBUCIÓN — ${fecha} ${hora}\n`;
+    txt+=`╚══════════════════════════════════════════════╝\n\n`;
+    txt+=`  Total ítems:     ${totalPed}\n`;
+    txt+=`  Entregados OK:   ${entregadosOk}\n`;
+    txt+=`  Con faltantes:   ${faltantes.length}\n`;
+    txt+=`  Agregados extra: ${agregados.length}\n\n`;
+
+    if(faltantes.length>0){
+      txt+=`━━━ FALTANTES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      txt+=`  Hay ${faltantes.length} ítem/s que NO se entregaron completos.\n`;
+      txt+=`  Estos clientes deben recibir nota de crédito o reposición:\n\n`;
+      const porCliF={};
+      faltantes.forEach(m=>{if(!porCliF[m.cliente])porCliF[m.cliente]=[];porCliF[m.cliente].push(m);});
+      Object.entries(porCliF).forEach(([cli,ms])=>{
+        txt+=`  📦 ${cli}\n`;
+        ms.forEach(m=>{txt+=`     ✗ ${m.variedad}\n       Pedido: ${m.cantOriginal} → Entregado: ${m.cantReal} (faltan ${m.cantOriginal-m.cantReal})\n       Pos: ${m.posicion||"—"}\n\n`;});
+      });
+    }
+
+    if(agregados.length>0){
+      txt+=`━━━ PRODUCTOS AGREGADOS MANUALMENTE ━━━━━━━━━━━\n`;
+      txt+=`  Estos clientes recibieron MÁS producto del pedido.\n`;
+      txt+=`  Revisar si corresponde ajustar facturación:\n\n`;
+      const porCliA={};
+      agregados.forEach(m=>{if(!porCliA[m.cliente])porCliA[m.cliente]=[];porCliA[m.cliente].push(m);});
+      Object.entries(porCliA).forEach(([cli,ms])=>{
+        txt+=`  📦 ${cli}\n`;
+        ms.forEach(m=>{txt+=`     + ${m.variedad}\n       Pedido: ${m.cantOriginal} → Entregado: ${m.cantReal} (+${m.cantReal-m.cantOriginal} extra)\n       Pos: ${m.posicion||"—"}\n\n`;});
+      });
+    }
+
+    if(faltantes.length===0&&agregados.length===0) txt+=`  ✅ Jornada perfecta — sin faltantes ni extras.\n`;
+    txt+=`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    const b=new Blob([txt],{type:"text/plain;charset=utf-8"});
+    const u=URL.createObjectURL(b);const a=document.createElement("a");
+    a.href=u;a.download=`reporte_admin_${fecha.replace(/\//g,"-")}.txt`;a.click();URL.revokeObjectURL(u);
+  };
+
+  const tabStyle=(k)=>({
+    flex:1,background:"transparent",color:verTab===k?"#f8fafc":"#64748b",
+    border:"none",borderBottom:verTab===k?"2px solid #3b82f6":"2px solid transparent",
+    padding:"9px 4px",fontSize:12,fontWeight:700,cursor:"pointer",
+  });
+
+  return (
+    <div style={{paddingBottom:20}}>
+      {/* Resumen visual */}
+      <div style={{padding:"12px 16px 0"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+          {[
+            {l:"Entregados",v:entregadosOk,c:"#22c55e",bg:"#14532d33"},
+            {l:"Faltantes",v:faltantes.length,c:"#ef4444",bg:"#7f1d1d33"},
+            {l:"Agregados",v:agregados.length,c:"#f59e0b",bg:"#92400e33"},
+          ].map(k=>(
+            <div key={k.l} style={{background:k.bg,border:`1px solid ${k.c}44`,borderRadius:10,padding:"10px 6px",textAlign:"center"}}>
+              <div style={{color:k.c,fontSize:26,fontWeight:900,lineHeight:1}}>{k.v}</div>
+              <div style={{color:"#94a3b8",fontSize:10,marginTop:2}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+          <button onClick={exportarTSV} style={{...S.btnP,background:"#059669",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13}}>
+          📊 Exportar para Google Sheets (.tsv)
+        </button>
+        <button onClick={exportar} style={{...S.btnS,color:"#3b82f6",border:"1px solid #3b82f6",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          📥 Exportar reporte admin (.txt)
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid #334155",background:"#1e293b",marginBottom:8}}>
+        {[["resumen","📊 Resumen"],["faltantes","⚠️ Faltantes"],["agregados","➕ Agregados"],["clientes","👤 Por cliente"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setVerTab(k)} style={{...tabStyle(k),position:"relative"}}>
+            {l}
+            {k==="faltantes"&&faltantes.length>0&&<span style={{position:"absolute",top:4,right:2,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:8,padding:"1px 4px"}}>{faltantes.length}</span>}
+            {k==="agregados"&&agregados.length>0&&<span style={{position:"absolute",top:4,right:2,background:"#f59e0b",color:"#000",borderRadius:99,fontSize:8,padding:"1px 4px"}}>{agregados.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:"0 16px"}}>
+
+        {/* TAB RESUMEN */}
+        {verTab==="resumen"&&(
+          <>
+            <div style={{...S.card,padding:14,marginBottom:10}}>
+              <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:10}}>PROGRESO GENERAL</div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{color:"#94a3b8",fontSize:13}}>Total ítems</span>
+                <span style={{color:"#f8fafc",fontWeight:700}}>{totalPed}</span>
+              </div>
+              <div style={{background:"#0f172a",borderRadius:99,height:8,marginBottom:10,overflow:"hidden"}}>
+                <div style={{height:"100%",background:"#22c55e",width:`${totalPed?Math.round(entregadosOk/totalPed*100):0}%`,transition:"width 0.5s"}}/>
+              </div>
+              {ORDEN_MARCAS.map(m=>{
+                const ps=pedidos.filter(p=>p.marcaId===m.id);
+                if(!ps.length) return null;
+                const ok=ps.filter(p=>estadoItem(p)==="completo").length;
+                const pct=Math.round(ok/ps.length*100);
+                return (
+                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                    <div style={{width:8,height:8,borderRadius:99,background:m.color,flexShrink:0}}/>
+                    <span style={{color:"#94a3b8",fontSize:12,flex:1}}>{m.label}</span>
+                    <span style={{color:"#64748b",fontSize:11}}>{ok}/{ps.length}</span>
+                    <div style={{width:60,background:"#0f172a",borderRadius:99,height:4,overflow:"hidden"}}>
+                      <div style={{height:"100%",background:m.color,width:`${pct}%`}}/>
+                    </div>
+                    <span style={{color:pct===100?"#22c55e":"#64748b",fontSize:11,minWidth:32,textAlign:"right"}}>{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+            {faltantes.length===0&&agregados.length===0&&(
+              <div style={{textAlign:"center",padding:24,color:"#22c55e"}}>
+                <div style={{fontSize:40}}>🎉</div>
+                <div style={{fontWeight:700,fontSize:16,marginTop:8}}>¡Jornada perfecta!</div>
+                <div style={{color:"#475569",fontSize:13,marginTop:4}}>Sin faltantes ni productos agregados</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB FALTANTES */}
+        {verTab==="faltantes"&&(
+          faltantes.length===0
+            ?<div style={{textAlign:"center",padding:32,color:"#22c55e"}}><div style={{fontSize:36}}>✅</div><div style={{marginTop:8,fontWeight:700}}>Sin faltantes</div></div>
+            :<>
+              <div style={{...S.card,padding:12,marginBottom:12,background:"#3a0a0a",border:"1px solid #ef444444"}}>
+                <div style={{color:"#f87171",fontSize:13,fontWeight:700}}>⚠️ Acción requerida por administración</div>
+                <div style={{color:"#94a3b8",fontSize:12,marginTop:4}}>Los siguientes clientes no recibieron el pedido completo. Evaluar nota de crédito o reposición.</div>
+              </div>
+              {faltantes.map((m,i)=>(
+                <div key={i} style={{...S.card,padding:12,marginBottom:8,borderLeft:"3px solid #ef4444"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div style={{flex:1}}>
+                      <div style={{color:"#f8fafc",fontWeight:700,fontSize:14}}>{m.cliente}</div>
+                      <div style={{color:"#94a3b8",fontSize:12,marginTop:2}}>{m.variedad}</div>
+                      <div style={{color:"#475569",fontSize:11,marginTop:2}}>Pos: {m.posicion||"—"}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:"#94a3b8",fontSize:11,textDecoration:"line-through"}}>Pedido: {m.cantOriginal}</div>
+                      <div style={{color:"#ef4444",fontWeight:900,fontSize:18}}>Recibió: {m.cantReal}</div>
+                      <div style={{background:"#7f1d1d",color:"#fca5a5",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700,marginTop:2}}>−{m.cantOriginal-m.cantReal} faltante</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+        )}
+
+        {/* TAB AGREGADOS */}
+        {verTab==="agregados"&&(
+          agregados.length===0
+            ?<div style={{textAlign:"center",padding:32,color:"#22c55e"}}><div style={{fontSize:36}}>✅</div><div style={{marginTop:8,fontWeight:700}}>Sin productos agregados</div></div>
+            :<>
+              <div style={{...S.card,padding:12,marginBottom:12,background:"#3a2500",border:"1px solid #f59e0b44"}}>
+                <div style={{color:"#fcd34d",fontSize:13,fontWeight:700}}>➕ Acción requerida por administración</div>
+                <div style={{color:"#94a3b8",fontSize:12,marginTop:4}}>Los siguientes clientes recibieron más producto del pedido. Verificar si corresponde ajustar facturación.</div>
+              </div>
+              {agregados.map((m,i)=>(
+                <div key={i} style={{...S.card,padding:12,marginBottom:8,borderLeft:"3px solid #f59e0b"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div style={{flex:1}}>
+                      <div style={{color:"#f8fafc",fontWeight:700,fontSize:14}}>{m.cliente}</div>
+                      <div style={{color:"#94a3b8",fontSize:12,marginTop:2}}>{m.variedad}</div>
+                      <div style={{color:"#475569",fontSize:11,marginTop:2}}>Pos: {m.posicion||"—"}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:"#94a3b8",fontSize:11}}>Pedido: {m.cantOriginal}</div>
+                      <div style={{color:"#f59e0b",fontWeight:900,fontSize:18}}>Entregado: {m.cantReal}</div>
+                      <div style={{background:"#92400e",color:"#fcd34d",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700,marginTop:2}}>+{m.cantReal-m.cantOriginal} extra</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+        )}
+
+        {/* TAB POR CLIENTE */}
+        {verTab==="clientes"&&(
+          porCliente.length===0
+            ?<div style={{textAlign:"center",padding:32,color:"#22c55e"}}><div style={{fontSize:36}}>✅</div><div style={{marginTop:8,fontWeight:700}}>Sin novedades por cliente</div></div>
+            :porCliente.map(({cliente,falt,agreg})=>(
+              <div key={cliente} style={{...S.card,padding:14,marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{color:"#f8fafc",fontWeight:800,fontSize:15}}>👤 {cliente}</div>
+                  <div style={{display:"flex",gap:5}}>
+                    {falt.length>0&&<span style={{background:"#7f1d1d",color:"#fca5a5",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>−{falt.reduce((s,m)=>s+(m.cantOriginal-m.cantReal),0)} faltante</span>}
+                    {agreg.length>0&&<span style={{background:"#92400e",color:"#fcd34d",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>+{agreg.reduce((s,m)=>s+(m.cantReal-m.cantOriginal),0)} extra</span>}
+                  </div>
+                </div>
+                {falt.map((m,i)=>(
+                  <div key={"f"+i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #334155"}}>
+                    <span style={{color:"#94a3b8",fontSize:12}}>{m.variedad.length>30?m.variedad.slice(0,28)+"…":m.variedad}</span>
+                    <span style={{color:"#ef4444",fontWeight:700,fontSize:12}}>−{m.cantOriginal-m.cantReal} faltante</span>
+                  </div>
+                ))}
+                {agreg.map((m,i)=>(
+                  <div key={"a"+i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid #334155"}}>
+                    <span style={{color:"#94a3b8",fontSize:12}}>{m.variedad.length>30?m.variedad.slice(0,28)+"…":m.variedad}</span>
+                    <span style={{color:"#f59e0b",fontWeight:700,fontSize:12}}>+{m.cantReal-m.cantOriginal} agregado</span>
+                  </div>
+                ))}
+              </div>
+            ))
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ── FIREBASE SESSION HELPERS ──────────────────────────────────────────────────
+const getSessionId = () => { const h=window.location.hash.replace("#",""); return h&&h.length>3?h:null; };
+const setSessionHash = (id) => { window.location.hash=id; };
+const genId = () => Math.random().toString(36).slice(2,9).toUpperCase();
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+function App(){
+  const [pantalla,setPantalla]=useState(()=>getSessionId()?"unirse":"login");
+  const [operario,setOperario]=useState(null);
+  const [pedidos,setPedidos]=useState([]);
+  const [marcaIdx,setMarcaIdx]=useState(0);
+  const [tab,setTab]=useState("picking");
+  const [modifs,setModifs]=useState([]);
+  const [sessionId,setSessionId]=useState(getSessionId);
+  const [conectados,setConectados]=useState({});
+  const [fbStatus,setFbStatus]=useState("offline");
+  const [linkCopiado,setLinkCopiado]=useState(false);
+  const escuchando=useRef(false);
+
+  // Escuchar sesión Firebase en tiempo real
+  useEffect(()=>{
+    if(!sessionId||pantalla!=="main"||escuchando.current) return;
+    escuchando.current=true;
+    setFbStatus("conectando");
+    const ref=window.db.ref(`sesiones/${sessionId}`);
+    ref.on("value",snap=>{
+      const data=snap.val();
+      if(!data){setFbStatus("offline");return;}
+      setFbStatus("online");
+      if(data.pedidos) setPedidos(Object.values(data.pedidos));
+      if(data.marcaIdx!==undefined) setMarcaIdx(data.marcaIdx);
+      if(data.modifs) setModifs(Object.values(data.modifs));
+    });
+    return()=>{ref.off();escuchando.current=false;};
+  },[sessionId,pantalla]);
+
+  // Heartbeat: registrar operario activo
+  useEffect(()=>{
+    if(!sessionId||!operario) return;
+    const ref=window.db.ref(`sesiones/${sessionId}/conectados/${operario}`);
+    ref.set(Date.now());
+    ref.onDisconnect().remove();
+    const t=setInterval(()=>ref.set(Date.now()),8000);
+    return()=>{clearInterval(t);ref.remove();};
+  },[sessionId,operario]);
+
+  // Escuchar quién está conectado
+  useEffect(()=>{
+    if(!sessionId) return;
+    const ref=window.db.ref(`sesiones/${sessionId}/conectados`);
+    ref.on("value",snap=>setConectados(snap.val()||{}));
+    return()=>ref.off();
+  },[sessionId]);
+
+  // Escribir pedidos a Firebase
+  const fbSetPedidos=useCallback((updater)=>{
+    setPedidos(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      if(!sessionId) return next;
+      const obj={};
+      next.forEach(p=>{obj[`p${p.id}`]=p;});
+      window.db.ref(`sesiones/${sessionId}/pedidos`).set(obj);
+      return next;
+    });
+  },[sessionId]);
+
+  const fbSetMarcaIdx=useCallback((idx)=>{
+    setMarcaIdx(idx);
+    if(sessionId) window.db.ref(`sesiones/${sessionId}/marcaIdx`).set(idx);
+    setTab("picking");
+  },[sessionId]);
+
+  const fbAddModif=useCallback((m)=>{
+    setModifs(prev=>{
+      const next=[...prev,m];
+      if(sessionId){const obj={};next.forEach((x,i)=>{obj[`m${i}`]=x;});window.db.ref(`sesiones/${sessionId}/modifs`).set(obj);}
+      return next;
+    });
+  },[sessionId]);
+
+  // Locking para picking simultáneo: transacción Firebase
+  const claimItem=useCallback((pedidoId,op,onSuccess,onFail)=>{
+    if(!sessionId){onSuccess();return;}
+    const ref=window.db.ref(`sesiones/${sessionId}/locks/p${pedidoId}`);
+    ref.transaction(cur=>{
+      if(cur&&Date.now()-cur.ts<10000) return; // tomado hace menos de 10s
+      return {by:op,ts:Date.now()};
+    },(err,committed)=>{
+      if(committed) onSuccess();
+      else if(onFail) onFail();
+    });
+  },[sessionId]);
+
+  const confirmarAsignacion=(pedidosExpandidos)=>{
+    const sinPos=pedidosExpandidos.filter(p=>!p.posicion);
+    const sin=[...new Set(sinPos.map(p=>p.cliente))];
+    if(sin.length>0&&!window.confirm(`⚠️ ${sin.length} cliente/s sin posición:\n${sin.join("\n")}\n\n¿Continuar igual?`)) return false;
+    const sid=genId();
+    setSessionHash(sid);
+    setSessionId(sid);
+    const obj={};
+    pedidosExpandidos.forEach(p=>{obj[`p${p.id}`]=p;});
+    window.db.ref(`sesiones/${sid}`).set({pedidos:obj,marcaIdx:0,modifs:{},creadoPor:operario,ts:Date.now()});
+    setPedidos(pedidosExpandidos);
+    setMarcaIdx(0);
+    setPantalla("main");
+    return true;
+  };
+
+  const marcaActual=ORDEN_MARCAS[marcaIdx];
+  const total=pedidos.length;
+  const completos=pedidos.filter(p=>estadoItem(p)==="completo").length;
+  const pct=total?Math.round(completos/total*100):0;
+  const ahora=Date.now();
+  const activos=Object.entries(conectados).filter(([,ts])=>ahora-ts<20000).map(([n])=>n);
+
+  const linkSesion=`${window.location.origin}${window.location.pathname}#${sessionId}`;
+  const compartir=()=>{
+    navigator.clipboard.writeText(linkSesion).then(()=>{setLinkCopiado(true);setTimeout(()=>setLinkCopiado(false),2500);}).catch(()=>alert(linkSesion));
+  };
+
+  // ── PANTALLA UNIRSE (abrieron el link) ────────────────────────────────────
+  if(pantalla==="unirse") return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{width:"100%",maxWidth:300,textAlign:"center"}}>
+        <div style={{fontSize:52,marginBottom:8}}>📦</div>
+        <h2 style={{color:"#f8fafc",fontSize:22,fontWeight:900,marginBottom:4}}>Unirse a jornada</h2>
+        <div style={{background:"#1e3a5f",borderRadius:8,padding:"6px 14px",display:"inline-block",marginBottom:24}}>
+          <span style={{color:"#93c5fd",fontSize:14,fontWeight:800}}>Sesión: {sessionId}</span>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {["Pablo","Brian","David","Adrián"].map(op=>(
+            <button key={op} onClick={()=>{setOperario(op);setPantalla("main");}}
+              style={{background:"#1e293b",color:"#f8fafc",border:"1px solid #334155",borderRadius:10,padding:"14px",fontSize:16,fontWeight:700,cursor:"pointer"}}>
+              👤 {op}
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>{window.location.hash="";setPantalla("login");setSessionId(null);}} style={{marginTop:16,background:"transparent",color:"#475569",border:"none",fontSize:12,cursor:"pointer"}}>
+          Nueva jornada
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── PANTALLA LOGIN ────────────────────────────────────────────────────────
+  if(pantalla==="login") return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{width:"100%",maxWidth:300}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:52}}>📦</div>
+          <h1 style={{color:"#f8fafc",fontSize:26,fontWeight:900,letterSpacing:-1,margin:"8px 0 4px"}}>WMS Picking</h1>
+          <p style={{color:"#64748b",fontSize:13}}>La Francia Panificación</p>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {["Pablo","Brian","David","Adrián"].map(op=>(
+            <button key={op} onClick={()=>{setOperario(op);setPantalla("cargar");}}
+              style={{background:"#1e293b",color:"#f8fafc",border:"1px solid #334155",borderRadius:10,padding:"14px",fontSize:16,fontWeight:700,cursor:"pointer"}}>
+              👤 {op}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if(pantalla==="cargar") return <CargarPedidos onCargar={p=>{setPedidos(p);setPantalla("asignacion");}} onDemo={()=>{setPedidos(generarDemo());setPantalla("asignacion");}} onVolver={()=>setPantalla("login")}/>;
+  if(pantalla==="asignacion") return <AsignacionPosiciones pedidos={pedidos} setPedidos={setPedidos} onConfirmar={confirmarAsignacion} onVolver={()=>setPantalla("cargar")}/>;
+
+  // ── PANTALLA MAIN ─────────────────────────────────────────────────────────
+  return (
+    <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20}}>📦</span>
+          <div>
+            <div style={{fontWeight:900,fontSize:14,lineHeight:1}}>WMS Picking</div>
+            <div style={{color:"#64748b",fontSize:10}}>👤 {operario}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:3,alignItems:"center"}}>
+          {ORDEN_MARCAS.map((m,i)=>{
+            const items=pedidos.filter(p=>p.marcaId===m.id);
+            const done=items.length>0&&items.every(p=>estadoItem(p)==="completo");
+            const active=i===marcaIdx;
+            return <div key={m.id} onClick={()=>fbSetMarcaIdx(i)} title={m.label} style={{width:active?24:7,height:7,borderRadius:4,background:done?"#22c55e":active?m.color:"#334155",transition:"all 0.3s",cursor:"pointer"}}/>;
+          })}
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <div style={{background:"#0f172a",color:"#3b82f6",borderRadius:7,padding:"4px 9px",fontSize:12,fontWeight:900}}>{pct}%</div>
+          <button onClick={()=>{if(window.confirm("¿Volver al inicio?"))setPantalla("login");}} style={{background:"#0f172a",color:"#475569",border:"1px solid #334155",borderRadius:7,padding:"5px 8px",fontSize:11,cursor:"pointer"}}>⚙️</button>
+        </div>
+      </div>
+
+      {/* Barra sesión: quién está conectado + compartir */}
+      <div style={{background:"#0a0f1a",borderBottom:"1px solid #1e293b",padding:"5px 14px",display:"flex",alignItems:"center",gap:8,minHeight:30}}>
+        <div style={{display:"flex",gap:4,flex:1,flexWrap:"wrap"}}>
+          {activos.map(n=>(
+            <span key={n} style={{background:n===operario?"#1e3a5f":"#1e293b",color:n===operario?"#93c5fd":"#64748b",border:`1px solid ${n===operario?"#3b82f6":"#334155"}`,borderRadius:99,padding:"1px 8px",fontSize:11,fontWeight:700}}>
+              {n===operario?"• ":""}{n}
+            </span>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <div style={{width:6,height:6,borderRadius:99,background:fbStatus==="online"?"#22c55e":fbStatus==="conectando"?"#f59e0b":"#ef4444"}}/>
+          <button onClick={compartir} style={{background:linkCopiado?"#14532d":"#1e293b",color:linkCopiado?"#86efac":"#93c5fd",border:`1px solid ${linkCopiado?"#22c55e":"#3b82f6"}`,borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+            {linkCopiado?"✓ Copiado":"🔗 Compartir"}
+          </button>
+        </div>
+      </div>
+
+      {/* Marca activa */}
+      <div style={{background:`${marcaActual?.bg}cc`,borderBottom:`2px solid ${marcaActual?.color||"#334155"}`,padding:"7px 12px",display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={()=>fbSetMarcaIdx(marcaIdx-1)} disabled={marcaIdx===0} style={{background:"transparent",border:"none",color:marcaIdx===0?"#334155":"#94a3b8",fontSize:20,cursor:marcaIdx===0?"default":"pointer",padding:"0 4px",lineHeight:1}}>‹</button>
+        <div style={{flex:1,textAlign:"center"}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700}}>MARCA ACTIVA · {marcaIdx+1}/{ORDEN_MARCAS.length}</div>
+          <div style={{color:marcaActual?.color,fontWeight:900,fontSize:15,lineHeight:1.2}}>{marcaActual?.label}</div>
+        </div>
+        <button onClick={()=>fbSetMarcaIdx(marcaIdx+1)} disabled={marcaIdx===ORDEN_MARCAS.length-1} style={{background:"transparent",border:"none",color:marcaIdx===ORDEN_MARCAS.length-1?"#334155":"#94a3b8",fontSize:20,cursor:marcaIdx===ORDEN_MARCAS.length-1?"default":"pointer",padding:"0 4px",lineHeight:1}}>›</button>
+        <button onClick={()=>setPantalla("asignacion")} style={{background:"#0f172a",color:"#64748b",border:"1px solid #334155",borderRadius:7,padding:"4px 8px",fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>🗺️ Pos.</button>
+      </div>
+
+      <div style={{height:3,background:"#1e293b"}}><div style={{height:"100%",background:"#3b82f6",width:`${pct}%`,transition:"width 0.5s"}}/></div>
+
+      <div style={{display:"flex",borderBottom:"1px solid #334155",background:"#1e293b"}}>
+        {[["picking","🎯 Picking"],["mapa","🗺️ Mapa"],["reporte","📋 Reporte"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{flex:1,background:"transparent",color:tab===k?"#3b82f6":"#64748b",border:"none",borderBottom:tab===k?"2px solid #3b82f6":"2px solid transparent",padding:"11px 4px",fontSize:13,fontWeight:700,cursor:"pointer",position:"relative"}}>
+            {l}
+            {k==="reporte"&&modifs.length>0&&<span style={{position:"absolute",top:6,right:6,background:"#f59e0b",color:"#000",borderRadius:99,fontSize:9,fontWeight:900,padding:"1px 5px"}}>{modifs.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto"}}>
+        {tab==="picking"&&marcaActual&&(
+          marcaActual.tipo==="picking"
+            ?<PickingLaFrancia marcaConfig={marcaActual} pedidos={pedidos} setPedidos={fbSetPedidos} onMarcaCompleta={()=>fbSetMarcaIdx(marcaIdx+1)} addModif={fbAddModif} claimItem={claimItem} operario={operario}/>
+            :<Distribucion marcaConfig={marcaActual} pedidos={pedidos} setPedidos={fbSetPedidos} onMarcaCompleta={()=>fbSetMarcaIdx(marcaIdx+1)} addModif={fbAddModif}/>
+        )}
+        {tab==="mapa"&&<MapaDeposito pedidos={pedidos}/>}
+        {tab==="reporte"&&<Reporte pedidos={pedidos} modifs={modifs} operario={operario}/>}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
