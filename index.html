@@ -735,12 +735,55 @@ function AsignacionPosiciones({pedidos, setPedidos, onConfirmar, onVolver}){
 
   const guardar=()=>{
     const expandidos=[];
-    pedidos.forEach(p=>{
-      const poss=(asig[p.cliente]||[""]).filter(Boolean);
-      if(poss.length===0){expandidos.push({...p,posicion:""});return;}
-      if(poss.length===1){expandidos.push({...p,posicion:poss[0]});return;}
-      poss.forEach((pos,idx)=>{
-        if(idx===0) expandidos.push({...p,posicion:pos});
+    const clientesUnicos2=[...new Set(pedidos.map(p=>p.cliente))];
+    clientesUnicos2.forEach(cliente=>{
+      const poss=(asig[cliente]||[]).filter(Boolean);
+      const itemsCliente=pedidos.filter(p=>p.cliente===cliente);
+      if(poss.length===0){
+        itemsCliente.forEach(p=>expandidos.push({...p,posicion:""}));
+        return;
+      }
+      if(poss.length===1){
+        itemsCliente.forEach(p=>expandidos.push({...p,posicion:poss[0]}));
+        return;
+      }
+      // Múltiples posiciones (cliente con varios palets):
+      // La Francia: cada ítem (=1 unidad) se distribuye en round-robin entre posiciones
+      // Otras marcas: si hay 1 ítem con cantidad N, distribuir la cantidad entre posiciones
+      const prodIds=[...new Set(itemsCliente.map(p=>p.productoId))];
+      let contadorGlobal=0; // para round-robin entre todos los productos
+      prodIds.forEach(prodId=>{
+        const itemsProd=itemsCliente.filter(p=>p.productoId===prodId);
+        const marcaId=itemsProd[0]?.marcaId;
+        const esLaFrancia=marcaId==="LF_PANES"||marcaId==="LF_DULCE";
+        if(esLaFrancia){
+          // Cada ítem (1 unidad) va a una posición en round-robin
+          itemsProd.forEach((item)=>{
+            const pos=poss[contadorGlobal%poss.length];
+            contadorGlobal++;
+            expandidos.push({...item,posicion:pos});
+          });
+        } else {
+          // Para cada ítem, si tiene cantidad grande, dividirla entre posiciones
+          itemsProd.forEach((item)=>{
+            const cant=item.cantidad||1;
+            if(cant<=poss.length){
+              // Poca cantidad: todo a la primera posición del round-robin
+              expandidos.push({...item,posicion:poss[contadorGlobal%poss.length]});
+              contadorGlobal++;
+            } else {
+              // Cantidad > posiciones: distribuir lo más parejo posible
+              const base=Math.floor(cant/poss.length);
+              const resto=cant%poss.length;
+              poss.forEach((pos,pi)=>{
+                const cantPos=base+(pi<resto?1:0);
+                if(cantPos>0){
+                  expandidos.push({...item,id:item.id+"-"+pi,posicion:pos,cantidad:cantPos,entregado:0});
+                }
+              });
+            }
+          });
+        }
       });
     });
     onConfirmar(expandidos);
@@ -1252,7 +1295,9 @@ function MapaDeposito({pedidos, setPedidos}){
                   <div key={pos} onClick={()=>setPosSeleccionada(seleccionada?null:pos)}
                     style={{background:seleccionada?"#1e3a5f":c.bg,border:`${seleccionada?"2px":"1px"} solid ${seleccionada?"#3b82f6":est==="vacio"?zonaBorder:c.b}`,borderRadius:5,padding:"4px 3px",textAlign:"center",fontSize:10,fontWeight:700,color:seleccionada?"#93c5fd":c.c,minHeight:30,cursor:"pointer",transition:"all 0.15s"}}>
                     <div>{pos}</div>
-                    {cls[0]&&<div style={{fontSize:8,opacity:0.8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls[0]}{cls.length>1?` +${cls.length-1}`:""}</div>}
+                    {cls.length>0&&<div style={{fontSize:7,opacity:0.85,overflow:"hidden",lineHeight:1.2}}>
+                      {cls.slice(0,2).map(n=>n.split(" ")[0]).join(", ")}{cls.length>2?` +${cls.length-2}`:""}
+                    </div>}
                   </div>
                 );
               })}
@@ -1263,24 +1308,12 @@ function MapaDeposito({pedidos, setPedidos}){
 
       {/* Detalle de posición seleccionada */}
       {posSeleccionada&&(
-        <div style={{marginTop:16,background:"#1e293b",borderRadius:12,padding:14,border:"1px solid #3b82f6",animation:"popIn 0.2s ease"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{color:"#93c5fd",fontWeight:900,fontSize:16}}>📍 Posición {posSeleccionada}</div>
-            <button onClick={()=>setPosSeleccionada(null)} style={{background:"#0f172a",color:"#64748b",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:"pointer"}}>✕</button>
-          </div>
-          {itemsPos.length===0?(
-            <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:8}}>Sin pedidos asignados</div>
-          ):(
-            itemsPos.map(p=>{
-              const prod=PRODUCTOS.find(x=>x.id===p.productoId);
-              const marca=ORDEN_MARCAS.find(m=>m.id===p.marcaId);
-              const estado=estadoItem(p);
-              return (
-                <DetallePosItem key={p.id} item={p} prod={prod} marca={marca} estado={estado} setPedidos={setPedidos} todasLasPosiciones={TODAS_POS}/>
-              );
-            })
-          )}
-        </div>
+        <DetallePosicion
+          pos={posSeleccionada}
+          items={itemsPos}
+          setPedidos={setPedidos}
+          onCerrar={()=>setPosSeleccionada(null)}
+        />
       )}
 
       <div style={{display:"flex",gap:10,marginTop:12,justifyContent:"center",flexWrap:"wrap"}}>
@@ -1293,6 +1326,180 @@ function MapaDeposito({pedidos, setPedidos}){
           <span key={l} style={{fontSize:10,color:c,fontWeight:700}}>{l}</span>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── DETALLE POSICION (agrupado + contador paralelo) ───────────────────────────
+function DetallePosicion({pos, items, setPedidos, onCerrar}){
+  const [verTab,setVerTab]=useState("resumen"); // resumen | contador | items
+  // Contador paralelo: {productoId: conteo}
+  const [conteo,setConteo]=useState({});
+
+  // Clientes en esta posición
+  const clientesPos=[...new Set(items.map(p=>p.cliente))];
+
+  // Agrupar por marca + productoId para La Francia; por producto para el resto
+  const esLF=p=>p.marcaId==="LF_PANES"||p.marcaId==="LF_DULCE";
+
+  // Grupos para resumen — agrupa unidades de La Francia por productoId+cliente
+  const grupos=[];
+  const prodIds=[...new Set(items.map(p=>p.productoId))];
+  prodIds.forEach(prodId=>{
+    const prod=PRODUCTOS.find(x=>x.id===prodId);
+    const marca=ORDEN_MARCAS.find(m=>m.id===prod?.marcaId);
+    const itemsProd=items.filter(p=>p.productoId===prodId);
+    if(esLF(itemsProd[0])){
+      // Agrupar por cliente dentro del mismo producto
+      const clientesProd=[...new Set(itemsProd.map(p=>p.cliente))];
+      clientesProd.forEach(cliente=>{
+        const its=itemsProd.filter(p=>p.cliente===cliente);
+        const total=its.length; // cada ítem LF = 1 unidad
+        const entregado=its.filter(p=>estadoItem(p)==="completo").length;
+        grupos.push({prodId,prod,marca,cliente,total,entregado,esLF:true,items:its});
+      });
+    } else {
+      // Otras marcas: un renglón por cliente
+      const clientesProd=[...new Set(itemsProd.map(p=>p.cliente))];
+      clientesProd.forEach(cliente=>{
+        const its=itemsProd.filter(p=>p.cliente===cliente);
+        const total=its.reduce((s,p)=>s+p.cantidad,0);
+        const entregado=its.reduce((s,p)=>s+p.entregado,0);
+        grupos.push({prodId,prod,marca,cliente,total,entregado,esLF:false,items:its});
+      });
+    }
+  });
+
+  // Total general
+  const totalUnidades=grupos.reduce((s,g)=>s+g.total,0);
+  const entregadoTotal=grupos.reduce((s,g)=>s+g.entregado,0);
+
+  const sumarConteo=(prodId)=>setConteo(prev=>({...prev,[prodId]:(prev[prodId]||0)+1}));
+  const resetConteo=()=>setConteo({});
+
+  const tabStyle=(k)=>({
+    flex:1,background:"transparent",
+    color:verTab===k?"#f8fafc":"#64748b",
+    border:"none",borderBottom:verTab===k?"2px solid #3b82f6":"2px solid transparent",
+    padding:"8px 4px",fontSize:12,fontWeight:700,cursor:"pointer",
+  });
+
+  return (
+    <div style={{marginTop:16,background:"#1e293b",borderRadius:12,padding:14,border:"1px solid #3b82f6",animation:"popIn 0.2s ease"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{color:"#93c5fd",fontWeight:900,fontSize:16}}>📍 Posición {pos}</div>
+          <div style={{color:"#64748b",fontSize:11,marginTop:2}}>
+            {clientesPos.join(" · ")} · {totalUnidades} unidades
+          </div>
+        </div>
+        <button onClick={onCerrar} style={{background:"#0f172a",color:"#64748b",border:"1px solid #334155",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:"pointer"}}>✕</button>
+      </div>
+
+      {items.length===0?(
+        <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:8}}>Sin pedidos asignados</div>
+      ):(
+        <>
+          {/* Tabs */}
+          <div style={{display:"flex",borderBottom:"1px solid #334155",marginBottom:10}}>
+            <button onClick={()=>setVerTab("resumen")} style={tabStyle("resumen")}>📋 Resumen</button>
+            <button onClick={()=>setVerTab("contador")} style={tabStyle("contador")}>🔢 Contar</button>
+            <button onClick={()=>setVerTab("items")} style={tabStyle("items")}>📦 Ítems</button>
+          </div>
+
+          {/* TAB RESUMEN — agrupado por variedad */}
+          {verTab==="resumen"&&(
+            <div>
+              {grupos.map((g,i)=>{
+                const pct=g.total>0?Math.round((g.entregado/g.total)*100):0;
+                const color=g.entregado===0?"#ef4444":g.entregado===g.total?"#22c55e":"#f59e0b";
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
+                    <div style={{flex:1}}>
+                      <div style={{color:"#f8fafc",fontSize:13,fontWeight:700}}>{NOMBRE_CORTO[g.prodId]||g.prod?.nombre}</div>
+                      <div style={{color:"#64748b",fontSize:11}}>{g.cliente} · <span style={{color:g.marca?.color||"#94a3b8"}}>{g.marca?.label}</span></div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{color:color,fontWeight:900,fontSize:16}}>{g.entregado}<span style={{color:"#475569",fontSize:12,fontWeight:400}}>/{g.total}</span></div>
+                      <div style={{color:"#475569",fontSize:10}}>{pct}%</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"1px solid #334155"}}>
+                <span style={{color:"#94a3b8",fontSize:12,fontWeight:700}}>TOTAL</span>
+                <span style={{color:"#f8fafc",fontWeight:900,fontSize:15}}>{entregadoTotal}/{totalUnidades}</span>
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTADOR — control de calidad */}
+          {verTab==="contador"&&(
+            <div>
+              <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{color:"#64748b",fontSize:11}}>Contá físicamente y verificá que coincida con el pedido</span>
+                <button onClick={resetConteo} style={{background:"#334155",color:"#94a3b8",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>↺ Reset</button>
+              </div>
+              {grupos.map((g,i)=>{
+                const cnt=conteo[g.prodId+"|"+g.cliente]||0;
+                const key=g.prodId+"|"+g.cliente;
+                const ok=cnt===g.total;
+                const excede=cnt>g.total;
+                const borderColor=cnt===0?"#334155":excede?"#ef4444":ok?"#22c55e":"#f59e0b";
+                const bgColor=cnt===0?"#0f172a":excede?"#3a0a0a":ok?"#14532d33":"#3a2500";
+                return (
+                  <div key={i} style={{background:bgColor,border:`1px solid ${borderColor}`,borderRadius:10,padding:"10px 12px",marginBottom:8,transition:"all 0.2s"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1}}>
+                        <div style={{color:"#f8fafc",fontSize:13,fontWeight:700}}>{NOMBRE_CORTO[g.prodId]||g.prod?.nombre}</div>
+                        <div style={{color:"#64748b",fontSize:11}}>{g.cliente}</div>
+                      </div>
+                      {/* Contador */}
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <button onClick={()=>setConteo(prev=>({...prev,[key]:Math.max(0,(prev[key]||0)-1)}))}
+                          style={{background:"#1e293b",color:"#f8fafc",border:"1px solid #334155",borderRadius:8,width:34,height:34,fontSize:20,fontWeight:900,cursor:"pointer",lineHeight:1}}>−</button>
+                        <div style={{textAlign:"center",minWidth:48}}>
+                          <div style={{color:excede?"#ef4444":ok?"#22c55e":"#f8fafc",fontSize:26,fontWeight:900,lineHeight:1}}>{cnt}</div>
+                          <div style={{color:"#475569",fontSize:10}}>de {g.total}</div>
+                        </div>
+                        <button onClick={()=>sumarConteo(key)}
+                          style={{background:ok?"#14532d":"#1e293b",color:ok?"#86efac":"#f8fafc",border:`1px solid ${ok?"#22c55e":"#334155"}`,borderRadius:8,width:34,height:34,fontSize:20,fontWeight:900,cursor:"pointer",lineHeight:1}}>+</button>
+                      </div>
+                      {/* Estado */}
+                      <div style={{fontSize:20}}>{cnt===0?"⬜":excede?"🔴":ok?"✅":"🟡"}</div>
+                    </div>
+                    {excede&&<div style={{color:"#ef4444",fontSize:11,fontWeight:700,marginTop:4}}>⚠️ Contaste {cnt-g.total} de más</div>}
+                    {ok&&cnt>0&&<div style={{color:"#22c55e",fontSize:11,fontWeight:700,marginTop:4}}>✓ Coincide con el pedido</div>}
+                  </div>
+                );
+              })}
+              {/* Resumen del conteo */}
+              {Object.keys(conteo).length>0&&(
+                <div style={{background:"#1e293b",borderRadius:8,padding:10,marginTop:4,border:"1px solid #334155"}}>
+                  {grupos.every(g=>(conteo[g.prodId+"|"+g.cliente]||0)===g.total)?(
+                    <div style={{color:"#22c55e",fontWeight:900,fontSize:14,textAlign:"center"}}>✅ Posición {pos} verificada</div>
+                  ):(
+                    <div style={{color:"#f59e0b",fontWeight:700,fontSize:13,textAlign:"center"}}>
+                      {grupos.filter(g=>(conteo[g.prodId+"|"+g.cliente]||0)===g.total).length}/{grupos.length} variedades verificadas
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB ITEMS — detalle individual con edición */}
+          {verTab==="items"&&(
+            items.map(p=>{
+              const prod=PRODUCTOS.find(x=>x.id===p.productoId);
+              const marca=ORDEN_MARCAS.find(m=>m.id===p.marcaId);
+              const estado=estadoItem(p);
+              return <DetallePosItem key={p.id} item={p} prod={prod} marca={marca} estado={estado} setPedidos={setPedidos} todasLasPosiciones={TODAS_POS}/>;
+            })
+          )}
+        </>
+      )}
     </div>
   );
 }
