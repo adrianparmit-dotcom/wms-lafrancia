@@ -418,18 +418,16 @@ const parsearCSV = (texto) => {
 
 // ── TOAST PICKING (cantidad editable, alerta exceso, faltante posible) ────────
 function ToastPicking({data, onDone}){
-  const [seg,setSeg]=useState(5);
+  const [seg,setSeg]=useState(30);
+  const [pausado,setPausado]=useState(false);
   const [extendido,setExtendido]=useState(false);
   const [cantReal,setCantReal]=useState(1);
-  // data.totalCliente = total pedido para esta variedad en esta posición
-  // data.entregadoAntes = cuántas ya tiene confirmadas antes de esta
-  const restante = data.totalCliente - data.entregadoAntes; // cuántas faltan entregar
+  const restante = data.totalCliente - data.entregadoAntes;
   const esFaltante = cantReal === 0;
   const esExceso = (data.entregadoAntes + cantReal) > data.totalCliente;
   const exceso = esExceso ? (data.entregadoAntes + cantReal) - data.totalCliente : 0;
 
-  // Pausar countdown si hay exceso (requiere confirmación manual)
-  const pausarTimer = extendido || esExceso;
+  const pausarTimer = pausado || extendido || esExceso;
 
   useEffect(()=>{
     if(pausarTimer) return;
@@ -439,13 +437,9 @@ function ToastPicking({data, onDone}){
   },[seg,pausarTimer,onDone,cantReal]);
 
   const confirmar=()=>{
-    if(esExceso){
-      onDone(cantReal,"agregado_manual");
-    } else if(esFaltante){
-      onDone(0,"faltante");
-    } else {
-      onDone(cantReal,"normal");
-    }
+    if(esExceso) onDone(cantReal,"agregado_manual");
+    else if(esFaltante) onDone(0,"faltante");
+    else onDone(cantReal,"normal");
   };
 
   const colorBorde = esFaltante?"#ef4444":esExceso?"#f59e0b":"#22c55e";
@@ -453,7 +447,7 @@ function ToastPicking({data, onDone}){
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:16}}>
-      <div style={{background:bgPrincipal,border:`2px solid ${colorBorde}`,borderRadius:20,padding:20,textAlign:"center",width:"100%",maxWidth:340,animation:"popIn 0.2s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:bgPrincipal,border:`2px solid ${colorBorde}`,borderRadius:20,padding:20,textAlign:"center",width:"100%",maxWidth:340,animation:"popIn 0.2s ease"}}>
         <div style={{color:"#86efac",fontSize:11,fontWeight:700,letterSpacing:"0.1em",marginBottom:4}}>📍 LLEVAR A</div>
         <div style={{color:"#4ade80",fontSize:68,fontWeight:900,lineHeight:1}}>{data.posicion}</div>
         <div style={{color:"#f8fafc",fontSize:17,fontWeight:800,marginTop:4}}>{data.cliente}</div>
@@ -471,8 +465,6 @@ function ToastPicking({data, onDone}){
             </div>
             <button onClick={()=>setCantReal(c=>c+1)} style={{background:"rgba(0,0,0,0.4)",color:"#f8fafc",border:"1px solid #334155",borderRadius:8,width:42,height:42,fontSize:24,fontWeight:900,cursor:"pointer"}}>+</button>
           </div>
-
-          {/* Resumen ya tenía / total */}
           <div style={{display:"flex",justifyContent:"space-around",marginTop:8,paddingTop:8,borderTop:"1px solid #ffffff11"}}>
             <div style={{textAlign:"center"}}>
               <div style={{color:"#22c55e",fontSize:16,fontWeight:900}}>{data.entregadoAntes}</div>
@@ -486,14 +478,14 @@ function ToastPicking({data, onDone}){
           </div>
         </div>
 
-        {/* Alerta de exceso */}
+        {/* Alerta exceso */}
         {esExceso&&(
           <div style={{background:"#3a2500",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 12px",marginTop:10,textAlign:"left"}}>
             <div style={{color:"#f59e0b",fontSize:13,fontWeight:800,marginBottom:4}}>⚠️ Atención</div>
             <div style={{color:"#fcd34d",fontSize:12,lineHeight:1.5}}>
-              Este cliente tiene <strong>{data.totalCliente} pedido/s</strong> de esta variedad pero estás sumando <strong>{data.entregadoAntes+cantReal}</strong>. Eso es <strong>{exceso} extra</strong>.
+              Este cliente tiene <strong>{data.totalCliente} pedido/s</strong> pero estás sumando <strong>{data.entregadoAntes+cantReal}</strong>. Eso es <strong>{exceso} extra</strong>.
             </div>
-            <div style={{color:"#94a3b8",fontSize:11,marginTop:6}}>¿Es correcto? Si confirmás, quedará registrado como <strong style={{color:"#f59e0b"}}>producto agregado manualmente</strong>.</div>
+            <div style={{color:"#94a3b8",fontSize:11,marginTop:6}}>¿Es correcto? Quedará como <strong style={{color:"#f59e0b"}}>producto agregado</strong>.</div>
           </div>
         )}
 
@@ -501,10 +493,17 @@ function ToastPicking({data, onDone}){
         {(!extendido&&!esExceso)?(
           <div style={{marginTop:10}}>
             {!esFaltante&&<>
-              <div style={{background:"rgba(0,0,0,0.3)",borderRadius:99,height:3,marginBottom:6,overflow:"hidden"}}>
-                <div style={{background:"#22c55e",height:"100%",width:`${(seg/5)*100}%`,transition:"width 1s linear"}}/>
+              {/* Barra de progreso timer */}
+              <div style={{background:"rgba(0,0,0,0.3)",borderRadius:99,height:4,marginBottom:4,overflow:"hidden"}}>
+                <div style={{background:pausado?"#f59e0b":"#22c55e",height:"100%",width:`${(seg/30)*100}%`,transition:pausado?"none":"width 1s linear"}}/>
               </div>
-              <div style={{color:"#475569",fontSize:11,marginBottom:8}}>Cerrando en {seg}s...</div>
+              {/* Timer + pausa/play */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
+                <span style={{color:"#475569",fontSize:11}}>{pausado?"⏸ Pausado":"Cerrando en"} {seg}s</span>
+                <button onClick={()=>setPausado(p=>!p)} style={{background:pausado?"#f59e0b22":"#1e293b",color:pausado?"#f59e0b":"#64748b",border:`1px solid ${pausado?"#f59e0b44":"#334155"}`,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  {pausado?"▶ Reanudar":"⏸ Pausar"}
+                </button>
+              </div>
             </>}
             <button onClick={()=>setExtendido(true)} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>
               🔍 Necesito buscar esta posición
@@ -940,6 +939,9 @@ function PickingLaFrancia({marcaConfig, pedidos, setPedidos, onMarcaCompleta, ad
   const [historial,setHistorial]=useState([]); // [{pedidoId, estadoAnterior, info}]
   const col=marcaConfig.color;
 
+  // Todos los productos de esta marca — siempre visibles
+  const todosProds = PRODUCTOS.filter(p=>p.marcaId===marcaConfig.id);
+
   const prodsPend=[...new Set(
     pedidos.filter(p=>p.marcaId===marcaConfig.id&&estadoItem(p)!=="completo").map(p=>p.productoId)
   )].map(id=>{
@@ -947,6 +949,15 @@ function PickingLaFrancia({marcaConfig, pedidos, setPedidos, onMarcaCompleta, ad
     const items=pedidos.filter(p=>p.productoId===id&&estadoItem(p)!=="completo");
     return {...prod,items,pendientes:items.length};
   });
+
+  // Para cada producto: estado para mostrar color
+  const estadoProd=(prodId)=>{
+    const items=pedidos.filter(p=>p.productoId===prodId&&p.marcaId===marcaConfig.id);
+    if(items.length===0) return "sin_pedido";
+    if(items.every(p=>estadoItem(p)==="completo")) return "completo";
+    if(items.some(p=>p.entregado>0)) return "parcial";
+    return "pendiente";
+  };
 
   // El operario toca una variedad → intenta tomar el ítem más urgente vía lock Firebase
   const handleTengoEste=prod=>{
@@ -985,12 +996,12 @@ function PickingLaFrancia({marcaConfig, pedidos, setPedidos, onMarcaCompleta, ad
     const {pedidoId,posicion,cliente,variedad,productoId}=toast;
     const esFaltante=tipo==="faltante";
     const esAgregado=tipo==="agregado_manual";
-    // Guardar estado anterior para poder deshacer
     const pedidoAnterior=pedidos.find(p=>p.id===pedidoId);
     setHistorial(prev=>[...prev,{pedidoId, estadoAnterior:{...pedidoAnterior}, info:{posicion,cliente,variedad,cantReal}}]);
     setPedidos(prev=>prev.map(p=>{
       if(p.id!==pedidoId) return p;
-      return {...p, entregado:cantReal, esFaltante, esAgregado};
+      // Guardar timestamp y operario para el dashboard de performance
+      return {...p, entregado:cantReal, esFaltante, esAgregado, tsConfirmado:Date.now(), operarioConfirmo:operario||"?"};
     }));
     if(tipo!=="normal"){
       addModif({tipo:"picking",pedidoId,productoId,posicion,cliente,variedad,
@@ -1046,34 +1057,44 @@ function PickingLaFrancia({marcaConfig, pedidos, setPedidos, onMarcaCompleta, ad
         Tocá la variedad que tenés en la mano ({totalPend} unidades pendientes)
       </div>
 
-      {/* Grilla de variedades */}
+      {/* Grilla de variedades — siempre visible */}
       <div style={{padding:"0 16px",display:"flex",flexWrap:"wrap",gap:8}}>
-        {prodsPend.length===0?(
-          <div style={{width:"100%",textAlign:"center",padding:40}}>
-            <div style={{fontSize:40}}>🎉</div>
-            <div style={{color:"#22c55e",fontWeight:700,fontSize:16,marginTop:8}}>¡{marcaConfig.label} completo!</div>
-            <button onClick={onMarcaCompleta} style={{marginTop:16,background:col,color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:15,fontWeight:900,cursor:"pointer"}}>Siguiente marca →</button>
+        {prodsPend.length===0&&(
+          <div style={{width:"100%",textAlign:"center",padding:"16px 0 8px"}}>
+            <div style={{fontSize:32}}>🎉</div>
+            <div style={{color:"#22c55e",fontWeight:700,fontSize:15,marginTop:4}}>¡{marcaConfig.label} completo!</div>
+            <button onClick={onMarcaCompleta} style={{marginTop:12,background:col,color:"#fff",border:"none",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:900,cursor:"pointer"}}>Siguiente marca →</button>
           </div>
-        ):(
-          prodsPend.map(prod=>{
-            const nc=NOMBRE_CORTO[prod.id]||prod.nombre.split(" ").slice(2,4).join(" ");
-            return (
-              <button key={prod.id} onClick={()=>handleTengoEste(prod)} style={{
-                flex:"1 1 calc(50% - 4px)",minWidth:130,
-                background:"#1e293b",border:`2px solid ${col}33`,
-                borderRadius:10,padding:"14px 10px",
-                textAlign:"center",cursor:"pointer",
-                transition:"all 0.15s",
-              }}
-                onMouseEnter={e=>{e.currentTarget.style.background="#273347";e.currentTarget.style.borderColor=col;}}
-                onMouseLeave={e=>{e.currentTarget.style.background="#1e293b";e.currentTarget.style.borderColor=col+"33";}}
-              >
-                <div style={{color:"#f8fafc",fontSize:15,fontWeight:800}}>{nc}</div>
-                <div style={{color:col,fontSize:12,fontWeight:700,marginTop:4}}>{prod.pendientes} pend.</div>
-              </button>
-            );
-          })
         )}
+        {todosProds.map(prod=>{
+          const nc=NOMBRE_CORTO[prod.id]||prod.nombre.split(" ").slice(2,4).join(" ");
+          const est=estadoProd(prod.id);
+          const pend=prodsPend.find(p=>p.id===prod.id);
+          const activo=est==="pendiente"||est==="parcial";
+          const bgColor=est==="completo"?"#14532d":est==="sin_pedido"?"#0f172a":est==="parcial"?"#3a2500":"#1e293b";
+          const borderColor=est==="completo"?"#22c55e":est==="sin_pedido"?"#1e293b":est==="parcial"?"#f59e0b":col+"66";
+          const textColor=est==="completo"?"#86efac":est==="sin_pedido"?"#334155":"#f8fafc";
+          const subColor=est==="completo"?"#22c55e":est==="sin_pedido"?"#1e293b":est==="parcial"?"#f59e0b":col;
+          const subText=est==="completo"?"✓ listo":est==="sin_pedido"?"sin pedido":est==="parcial"?`${pend?.pendientes||0} pend.`:`${pend?.pendientes||0} pend.`;
+          return (
+            <button key={prod.id}
+              onClick={()=>activo&&pend?handleTengoEste(pend):null}
+              disabled={!activo||!pend}
+              style={{
+                flex:"1 1 calc(50% - 4px)",minWidth:130,
+                background:bgColor,border:`2px solid ${borderColor}`,
+                borderRadius:10,padding:"12px 10px",textAlign:"center",
+                cursor:activo&&pend?"pointer":"default",
+                transition:"all 0.15s",opacity:est==="sin_pedido"?0.5:1,
+              }}
+              onMouseEnter={e=>{if(activo&&pend){e.currentTarget.style.background="#273347";e.currentTarget.style.borderColor=col;}}}
+              onMouseLeave={e=>{if(activo&&pend){e.currentTarget.style.background=bgColor;e.currentTarget.style.borderColor=borderColor;}}}
+            >
+              <div style={{color:textColor,fontSize:14,fontWeight:800}}>{nc}</div>
+              <div style={{color:subColor,fontSize:11,fontWeight:700,marginTop:3}}>{subText}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1357,9 +1378,177 @@ function DetallePosItem({item, prod, marca, estado, setPedidos, todasLasPosicion
   );
 }
 
+// ── DASHBOARD PERFORMANCE ─────────────────────────────────────────────────────
+function DashboardPerformance({pedidos, operario, onCerrar}){
+  const [verTab,setVerTab]=useState("general"); // general | porOperario | variedades
+
+  // Solo ítems de picking (La Francia) con timestamp
+  const itemsLF=pedidos.filter(p=>p.tsConfirmado&&(p.marcaId==="LF_PANES"||p.marcaId==="LF_DULCE"));
+
+  // Operarios que participaron
+  const operarios=[...new Set(itemsLF.map(p=>p.operarioConfirmo).filter(Boolean))];
+
+  // Tiempo promedio entre confirmaciones por operario
+  const statsOperario=operarios.map(op=>{
+    const items=[...itemsLF.filter(p=>p.operarioConfirmo===op)].sort((a,b)=>a.tsConfirmado-b.tsConfirmado);
+    const unidades=items.reduce((s,p)=>s+p.entregado,0);
+    let tiempos=[];
+    for(let i=1;i<items.length;i++){
+      const diff=(items[i].tsConfirmado-items[i-1].tsConfirmado)/1000;
+      if(diff<300) tiempos.push(diff); // ignorar gaps >5min (pausa)
+    }
+    const promSeg=tiempos.length?Math.round(tiempos.reduce((s,t)=>s+t,0)/tiempos.length):null;
+    return {op, unidades, promSeg, total:items.length};
+  }).sort((a,b)=>b.unidades-a.unidades);
+
+  // Stats generales
+  const totalUnidades=itemsLF.reduce((s,p)=>s+p.entregado,0);
+  const todosTiempos=[];
+  const itemsOrdenados=[...itemsLF].sort((a,b)=>a.tsConfirmado-b.tsConfirmado);
+  for(let i=1;i<itemsOrdenados.length;i++){
+    const diff=(itemsOrdenados[i].tsConfirmado-itemsOrdenados[i-1].tsConfirmado)/1000;
+    if(diff<300) todosTiempos.push(diff);
+  }
+  const promGeneral=todosTiempos.length?Math.round(todosTiempos.reduce((s,t)=>s+t,0)/todosTiempos.length):null;
+
+  // Stats por variedad
+  const variedades=[...new Set(itemsLF.map(p=>p.productoId))];
+  const statsVariedad=variedades.map(vid=>{
+    const items=itemsLF.filter(p=>p.productoId===vid).sort((a,b)=>a.tsConfirmado-b.tsConfirmado);
+    const nombre=NOMBRE_CORTO[vid]||vid;
+    const unidades=items.reduce((s,p)=>s+p.entregado,0);
+    let tiempos=[];
+    for(let i=1;i<items.length;i++){
+      const diff=(items[i].tsConfirmado-items[i-1].tsConfirmado)/1000;
+      if(diff<300) tiempos.push(diff);
+    }
+    const prom=tiempos.length?Math.round(tiempos.reduce((s,t)=>s+t,0)/tiempos.length):null;
+    return {vid,nombre,unidades,prom,entregas:items.length};
+  }).sort((a,b)=>b.unidades-a.unidades);
+
+  const fmtSeg=(s)=>{
+    if(s===null) return "—";
+    if(s<60) return `${s}s`;
+    return `${Math.floor(s/60)}m ${s%60}s`;
+  };
+
+  const colores=["#3b82f6","#22c55e","#f59e0b","#e85d04"];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:9999,display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto"}}>
+      <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{color:"#a78bfa",fontWeight:900,fontSize:18}}>📊 Performance de Jornada</div>
+          <div style={{color:"#64748b",fontSize:12,marginTop:2}}>{totalUnidades} unidades · {itemsLF.length} entregas registradas</div>
+        </div>
+        <button onClick={onCerrar} style={{background:"#0f172a",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:14}}>✕</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid #334155",background:"#0f172a"}}>
+        {[["general","🏁 General"],["porOperario","👤 Por operario"],["variedades","🍞 Variedades"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setVerTab(k)} style={{flex:1,background:"transparent",color:verTab===k?"#a78bfa":"#64748b",border:"none",borderBottom:verTab===k?"2px solid #a78bfa":"2px solid transparent",padding:"10px 4px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:16}}>
+
+        {/* GENERAL */}
+        {verTab==="general"&&(
+          <>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              {[
+                {l:"Total unidades",v:totalUnidades,c:"#a78bfa"},
+                {l:"Entregas confirmadas",v:itemsLF.length,c:"#3b82f6"},
+                {l:"Tiempo prom. entre entregas",v:fmtSeg(promGeneral),c:"#22c55e"},
+                {l:"Operarios activos",v:operarios.length,c:"#f59e0b"},
+              ].map(k=>(
+                <div key={k.l} style={{background:"#1e293b",border:`1px solid ${k.c}33`,borderRadius:10,padding:"12px",textAlign:"center"}}>
+                  <div style={{color:k.c,fontSize:22,fontWeight:900,lineHeight:1}}>{k.v}</div>
+                  <div style={{color:"#64748b",fontSize:10,marginTop:4}}>{k.l}</div>
+                </div>
+              ))}
+            </div>
+            {/* Ranking operarios rápido */}
+            <div style={{background:"#1e293b",borderRadius:10,padding:12,marginBottom:10}}>
+              <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:10}}>RANKING DE UNIDADES</div>
+              {statsOperario.map((s,i)=>(
+                <div key={s.op} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div style={{color:colores[i]||"#64748b",fontWeight:900,fontSize:16,width:20}}>{i+1}</div>
+                  <div style={{flex:1}}>
+                    <div style={{color:"#f8fafc",fontWeight:700,fontSize:13}}>{s.op}</div>
+                    <div style={{background:"#0f172a",borderRadius:99,height:5,marginTop:4,overflow:"hidden"}}>
+                      <div style={{background:colores[i]||"#334155",height:"100%",width:`${statsOperario[0].unidades>0?(s.unidades/statsOperario[0].unidades)*100:0}%`,transition:"width 0.5s"}}/>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:colores[i]||"#64748b",fontWeight:900,fontSize:15}}>{s.unidades}</div>
+                    <div style={{color:"#475569",fontSize:10}}>unidades</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* POR OPERARIO */}
+        {verTab==="porOperario"&&(
+          statsOperario.length===0
+          ?<div style={{textAlign:"center",padding:40,color:"#475569"}}>Sin datos de timing registrados aún</div>
+          :statsOperario.map((s,i)=>(
+            <div key={s.op} style={{background:"#1e293b",borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${colores[i]||"#334155"}44`}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <div style={{background:colores[i]||"#334155",color:"#fff",borderRadius:99,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13}}>{i+1}</div>
+                <div style={{color:"#f8fafc",fontWeight:900,fontSize:16}}>{s.op}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                {[
+                  {l:"Unidades",v:s.unidades,c:colores[i]||"#64748b"},
+                  {l:"Entregas",v:s.total,c:"#3b82f6"},
+                  {l:"Prom. entre entregas",v:fmtSeg(s.promSeg),c:"#22c55e"},
+                ].map(k=>(
+                  <div key={k.l} style={{background:"#0f172a",borderRadius:8,padding:"8px",textAlign:"center"}}>
+                    <div style={{color:k.c,fontSize:18,fontWeight:900}}>{k.v}</div>
+                    <div style={{color:"#475569",fontSize:9,marginTop:2}}>{k.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* POR VARIEDAD */}
+        {verTab==="variedades"&&(
+          statsVariedad.length===0
+          ?<div style={{textAlign:"center",padding:40,color:"#475569"}}>Sin datos registrados aún</div>
+          :<>
+            <div style={{color:"#64748b",fontSize:11,marginBottom:10}}>Ordenado por unidades entregadas</div>
+            {statsVariedad.map((s,i)=>(
+              <div key={s.vid} style={{display:"flex",alignItems:"center",gap:10,background:"#1e293b",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
+                <div style={{color:"#475569",fontSize:12,width:20,textAlign:"center"}}>{i+1}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#f8fafc",fontWeight:700,fontSize:13}}>{s.nombre}</div>
+                  <div style={{color:"#64748b",fontSize:11}}>{s.entregas} entregas</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#a78bfa",fontWeight:900,fontSize:16}}>{s.unidades} u.</div>
+                  <div style={{color:"#22c55e",fontSize:11}}>⏱ {fmtSeg(s.prom)}</div>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── REPORTE ADMIN ─────────────────────────────────────────────────────────────
 function Reporte({pedidos, modifs, operario}){
-  const [verTab,setVerTab]=useState("resumen"); // resumen | faltantes | agregados | clientes
+  const [verTab,setVerTab]=useState("resumen");
+  const [verDashboard,setVerDashboard]=useState(false);
 
   // Calcular datos
   const totalPed=pedidos.length;
@@ -1452,6 +1641,7 @@ function Reporte({pedidos, modifs, operario}){
 
   return (
     <div style={{paddingBottom:20}}>
+      {verDashboard&&<DashboardPerformance pedidos={pedidos} operario={operario} onCerrar={()=>setVerDashboard(false)}/>}
       {/* Resumen visual */}
       <div style={{padding:"12px 16px 0"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
@@ -1469,8 +1659,11 @@ function Reporte({pedidos, modifs, operario}){
           <button onClick={exportarTSV} style={{...S.btnP,background:"#059669",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13}}>
           📊 Exportar para Google Sheets (.tsv)
         </button>
-        <button onClick={exportar} style={{...S.btnS,color:"#3b82f6",border:"1px solid #3b82f6",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        <button onClick={exportar} style={{...S.btnS,color:"#3b82f6",border:"1px solid #3b82f6",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
           📥 Exportar reporte admin (.txt)
+        </button>
+        <button onClick={()=>setVerDashboard(true)} style={{...S.btnS,color:"#a78bfa",border:"1px solid #a78bfa",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          📊 Ver performance de la jornada
         </button>
       </div>
 
@@ -1626,7 +1819,7 @@ function LoginConRecuperacion({onLogin, onRetomar}){
   // Buscar última sesión activa del día en Firebase
   useEffect(()=>{
     const hoy=new Date().toDateString();
-    window.db.ref("sesiones").orderByChild("ts").limitToLast(5).once("value",snap=>{
+    window.db.ref("sesiones").limitToLast(10).once("value",snap=>{
       let ultima=null;
       snap.forEach(s=>{
         const d=s.val();
@@ -1728,7 +1921,7 @@ function App(){
       if(!data){setFbStatus("offline");return;}
       setFbStatus("online");
       if(data.pedidos) setPedidos(Object.values(data.pedidos));
-      if(data.marcaIdx!==undefined) setMarcaIdx(data.marcaIdx);
+      // marcaIdx NO se lee de Firebase — cada operario navega su propia marca
       if(data.modifs) setModifs(Object.values(data.modifs));
     });
     return()=>{ref.off();escuchando.current=false;};
@@ -1766,9 +1959,9 @@ function App(){
 
   const fbSetMarcaIdx=useCallback((idx)=>{
     setMarcaIdx(idx);
-    if(sessionId) window.db.ref(`sesiones/${sessionId}/marcaIdx`).set(idx);
+    // NO sincronizar marcaIdx con Firebase — cada operario navega su propia marca
     setTab("picking");
-  },[sessionId]);
+  },[]);
 
   const fbAddModif=useCallback((m)=>{
     setModifs(prev=>{
