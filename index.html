@@ -418,7 +418,7 @@ const parsearCSV = (texto) => {
 
 // ── TOAST PICKING (cantidad editable, alerta exceso, faltante posible) ────────
 function ToastPicking({data, onDone}){
-  const [seg,setSeg]=useState(30);
+  const [seg,setSeg]=useState(5);
   const [pausado,setPausado]=useState(false);
   const [extendido,setExtendido]=useState(false);
   const [cantReal,setCantReal]=useState(1);
@@ -495,7 +495,7 @@ function ToastPicking({data, onDone}){
             {!esFaltante&&<>
               {/* Barra de progreso timer */}
               <div style={{background:"rgba(0,0,0,0.3)",borderRadius:99,height:4,marginBottom:4,overflow:"hidden"}}>
-                <div style={{background:pausado?"#f59e0b":"#22c55e",height:"100%",width:`${(seg/30)*100}%`,transition:pausado?"none":"width 1s linear"}}/>
+                <div style={{background:pausado?"#f59e0b":"#22c55e",height:"100%",width:`${(seg/5)*100}%`,transition:pausado?"none":"width 1s linear"}}/>
               </div>
               {/* Timer + pausa/play */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
