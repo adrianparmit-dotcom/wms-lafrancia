@@ -2578,6 +2578,171 @@ const setSessionHash = (id) => { window.location.hash=id; };
 const genId = () => Math.random().toString(36).slice(2,9).toUpperCase();
 
 // ── APP ───────────────────────────────────────────────────────────────────────
+
+// ── MONITOR EN TIEMPO REAL ────────────────────────────────────────────────────
+function Monitor({pedidos, modifs, conectados, sessionId}){
+  const [ahora, setAhora] = useState(Date.now());
+
+  // Actualizar "hace X min" cada 30 segundos
+  useEffect(()=>{
+    const t = setInterval(()=>setAhora(Date.now()), 30000);
+    return()=>clearInterval(t);
+  },[]);
+
+  const tiempoDesde = (ts) => {
+    const seg = Math.floor((ahora - ts) / 1000);
+    if(seg < 60) return "ahora mismo";
+    const min = Math.floor(seg / 60);
+    if(min < 60) return `hace ${min} min`;
+    return `hace ${Math.floor(min/60)}h ${min%60}min`;
+  };
+
+  // Progreso por marca
+  const progPorMarca = ORDEN_MARCAS.map(m=>{
+    const its = pedidos.filter(p=>p.marcaId===m.id);
+    if(!its.length) return null;
+    const completos = its.filter(p=>estadoItem(p)==="completo").length;
+    const pct = Math.round(completos/its.length*100);
+    const falt = modifs.filter(x=>x.tipoMod==="faltante"&&pedidos.find(p=>p.id===x.pedidoId)?.marcaId===m.id).length;
+    return {m, its:its.length, completos, pct, falt};
+  }).filter(Boolean);
+
+  // Progreso general
+  const totalItems = pedidos.length;
+  const totalCompletos = pedidos.filter(p=>estadoItem(p)==="completo").length;
+  const pctGeneral = totalItems ? Math.round(totalCompletos/totalItems*100) : 0;
+
+  // Última actividad por operario (desde tsConfirmado)
+  const actividadOps = Object.entries(conectados||{}).map(([op, heartbeat])=>{
+    const itemsOp = pedidos.filter(p=>p.operarioConfirmo===op&&p.tsConfirmado);
+    const ultimo = itemsOp.reduce((max,p)=>p.tsConfirmado>max?p.tsConfirmado:max, 0);
+    // Cuántas confirmaciones en los últimos 5 minutos
+    const hace5min = ahora - 5*60*1000;
+    const recientes = itemsOp.filter(p=>p.tsConfirmado>hace5min).length;
+    return {op, heartbeat, ultimo, recientes};
+  }).sort((a,b)=>b.ultimo-a.ultimo);
+
+  // Últimas 8 acciones globales
+  const ultimasAcciones = [...pedidos]
+    .filter(p=>p.tsConfirmado)
+    .sort((a,b)=>b.tsConfirmado-a.tsConfirmado)
+    .slice(0,8)
+    .map(p=>({
+      ts: p.tsConfirmado,
+      op: p.operarioConfirmo||"?",
+      variedad: NOMBRE_CORTO[p.productoId]||p.productoNombre||p.productoId,
+      cliente: p.cliente,
+      posicion: p.posicion,
+      esFaltante: p.esFaltante,
+    }));
+
+  // Detectar si hay alguien frenado (heartbeat pero sin confirmaciones en 10 min)
+  const hace10min = ahora - 10*60*1000;
+
+  return (
+    <div style={{padding:16,paddingBottom:32}}>
+
+      {/* Progreso general */}
+      <div style={{background:"#0f172a",borderRadius:12,padding:16,marginBottom:12,border:"1px solid #1e293b"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{color:"#94a3b8",fontSize:11,fontWeight:700}}>PROGRESO GENERAL</div>
+          <div style={{color:"#3b82f6",fontSize:11,fontWeight:700}}>{totalCompletos}/{totalItems} ítems</div>
+        </div>
+        <div style={{background:"#1e293b",borderRadius:99,height:12,overflow:"hidden",marginBottom:6}}>
+          <div style={{height:"100%",background:pctGeneral===100?"#22c55e":"#3b82f6",width:`${pctGeneral}%`,transition:"width 0.8s ease",borderRadius:99}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between"}}>
+          <div style={{color:"#f8fafc",fontSize:28,fontWeight:900}}>{pctGeneral}%</div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:"#22c55e",fontSize:13,fontWeight:700}}>{totalCompletos} entregados</div>
+            <div style={{color:"#ef4444",fontSize:12}}>{modifs.filter(m=>m.tipoMod==="faltante").length} faltantes</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Operarios activos */}
+      <div style={{marginBottom:12}}>
+        <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>OPERARIOS</div>
+        {actividadOps.length===0&&(
+          <div style={{color:"#475569",fontSize:13,padding:"10px 0"}}>Nadie conectado aún</div>
+        )}
+        {actividadOps.map(({op,heartbeat,ultimo,recientes})=>{
+          const activo = heartbeat > ahora - 20000; // heartbeat cada 8s, margen 20s
+          const frenado = activo && ultimo > 0 && ultimo < hace10min;
+          const sinEmpezar = activo && ultimo === 0;
+          return (
+            <div key={op} style={{background:frenado?"#1a0a00":sinEmpezar?"#0f172a":"#0a1a0a",border:`1px solid ${frenado?"#b45309":sinEmpezar?"#334155":"#166534"}`,borderRadius:10,padding:"10px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:activo?(frenado?"#f59e0b":"#22c55e"):"#475569",flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{color:"#f8fafc",fontWeight:700,fontSize:14}}>{op}</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:2}}>
+                  {sinEmpezar ? "Conectado, sin confirmaciones aún" :
+                   ultimo===0 ? "Sin actividad" :
+                   frenado ? `⚠️ Sin actividad ${tiempoDesde(ultimo)}` :
+                   `Última acción ${tiempoDesde(ultimo)}`}
+                </div>
+              </div>
+              {recientes>0&&(
+                <div style={{textAlign:"center",background:"#14532d",borderRadius:8,padding:"4px 10px"}}>
+                  <div style={{color:"#22c55e",fontWeight:900,fontSize:16}}>{recientes}</div>
+                  <div style={{color:"#4ade80",fontSize:9}}>últimos 5min</div>
+                </div>
+              )}
+              {frenado&&(
+                <div style={{color:"#f59e0b",fontSize:11,fontWeight:700}}>FRENADO</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progreso por marca */}
+      <div style={{marginBottom:12}}>
+        <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>POR MARCA</div>
+        {progPorMarca.map(({m,its,completos,pct,falt})=>(
+          <div key={m.id} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:m.color,fontWeight:700,fontSize:13}}>{m.label}</span>
+                {falt>0&&<span style={{background:"#7f1d1d",color:"#fca5a5",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>-{falt}</span>}
+              </div>
+              <span style={{color:pct===100?"#22c55e":"#94a3b8",fontSize:12,fontWeight:700}}>{pct===100?"✓ completo":`${completos}/${its}`}</span>
+            </div>
+            <div style={{background:"#1e293b",borderRadius:99,height:7,overflow:"hidden"}}>
+              <div style={{height:"100%",background:pct===100?"#22c55e":m.color,width:`${pct}%`,transition:"width 0.6s ease",borderRadius:99,opacity:0.85}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Feed de últimas acciones */}
+      <div>
+        <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:6}}>ÚLTIMAS ACCIONES</div>
+        {ultimasAcciones.length===0&&(
+          <div style={{color:"#475569",fontSize:13}}>Aún no hay confirmaciones</div>
+        )}
+        {ultimasAcciones.map((a,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:a.esFaltante?"#ef4444":"#22c55e",flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:"#f8fafc",fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.variedad}</div>
+              <div style={{color:"#64748b",fontSize:11}}>{a.cliente} · {a.posicion||"—"}</div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{color:"#94a3b8",fontSize:11}}>{a.op}</div>
+              <div style={{color:"#475569",fontSize:10}}>{tiempoDesde(a.ts)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{textAlign:"center",color:"#334155",fontSize:10,marginTop:16}}>
+        🔄 Se actualiza en tiempo real vía Firebase
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [pantalla,setPantalla]=useState(()=>getSessionId()?"unirse":"login");
   const [operario,setOperario]=useState(null);
@@ -2594,7 +2759,9 @@ function App(){
 
   // Escuchar sesión Firebase en tiempo real
   useEffect(()=>{
-    if(!sessionId||pantalla!=="main"||escuchando.current) return;
+    if(!sessionId||escuchando.current) return;
+    // Escuchar desde "unirse" también — no esperar a "main"
+    if(pantalla!=="main"&&pantalla!=="unirse") return;
     escuchando.current=true;
     setFbStatus("conectando");
     const ref=window.db.ref(`sesiones/${sessionId}`);
@@ -2603,7 +2770,6 @@ function App(){
       if(!data){setFbStatus("offline");return;}
       setFbStatus("online");
       if(data.pedidos) setPedidos(Object.values(data.pedidos));
-      // marcaIdx NO se lee de Firebase — cada operario navega su propia marca
       if(data.modifs) setModifs(Object.values(data.modifs));
     });
     return()=>{ref.off();escuchando.current=false;};
@@ -2758,17 +2924,37 @@ function App(){
       <div style={{width:"100%",maxWidth:300,textAlign:"center"}}>
         <div style={{fontSize:52,marginBottom:8}}>📦</div>
         <h2 style={{color:"#f8fafc",fontSize:22,fontWeight:900,marginBottom:4}}>Unirse a jornada</h2>
-        <div style={{background:"#1e3a5f",borderRadius:8,padding:"6px 14px",display:"inline-block",marginBottom:24}}>
+        <div style={{background:"#1e3a5f",borderRadius:8,padding:"6px 14px",display:"inline-block",marginBottom:16}}>
           <span style={{color:"#93c5fd",fontSize:14,fontWeight:800}}>Sesión: {sessionId}</span>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {["Pablo","Brian","David","Adrián"].map(op=>(
-            <button key={op} onClick={()=>{setOperario(op);setPantalla("main");}}
-              style={{background:"#1e293b",color:"#f8fafc",border:"1px solid #334155",borderRadius:10,padding:"14px",fontSize:16,fontWeight:700,cursor:"pointer"}}>
-              👤 {op}
-            </button>
-          ))}
+
+        {/* Estado de conexión Firebase */}
+        <div style={{marginBottom:20,padding:"8px 14px",borderRadius:8,
+          background:fbStatus==="online"?"#14532d":fbStatus==="conectando"?"#1a1a00":"#1e293b",
+          border:`1px solid ${fbStatus==="online"?"#22c55e":fbStatus==="conectando"?"#f59e0b":"#334155"}`}}>
+          <span style={{fontSize:13,fontWeight:700,color:fbStatus==="online"?"#22c55e":fbStatus==="conectando"?"#f59e0b":"#64748b"}}>
+            {fbStatus==="online"?`✅ Jornada lista — ${pedidos.length} pedidos`:
+             fbStatus==="conectando"?"⏳ Conectando...":
+             "⚠️ Sin conexión"}
+          </span>
         </div>
+
+        {/* Solo mostrar operarios cuando Firebase respondió con datos */}
+        {fbStatus==="online"&&pedidos.length>0?(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {["Pablo","Brian","David","Adrián"].map(op=>(
+              <button key={op} onClick={()=>{setOperario(op);setPantalla("main");}}
+                style={{background:"#1e293b",color:"#f8fafc",border:"1px solid #334155",borderRadius:10,padding:"14px",fontSize:16,fontWeight:700,cursor:"pointer"}}>
+                👤 {op}
+              </button>
+            ))}
+          </div>
+        ):fbStatus==="online"&&pedidos.length===0?(
+          <div style={{color:"#ef4444",fontSize:13,padding:12}}>⚠️ La sesión no tiene pedidos. Pedile al encargado que comparta el link correcto.</div>
+        ):(
+          <div style={{color:"#64748b",fontSize:13,padding:12}}>Esperando conexión con Firebase...</div>
+        )}
+
         <button onClick={()=>{window.location.hash="";setPantalla("login");setSessionId(null);}} style={{marginTop:16,background:"transparent",color:"#475569",border:"none",fontSize:12,cursor:"pointer"}}>
           Nueva jornada
         </button>
@@ -2847,7 +3033,7 @@ function App(){
       <div style={{height:3,background:"#1e293b"}}><div style={{height:"100%",background:"#3b82f6",width:`${pct}%`,transition:"width 0.5s"}}/></div>
 
       <div style={{display:"flex",borderBottom:"1px solid #334155",background:"#1e293b"}}>
-        {[["picking","🎯 Picking"],["mapa","🗺️ Mapa"],["reporte","📋 Reporte"]].map(([k,l])=>(
+        {[["picking","🎯 Picking"],["mapa","🗺️ Mapa"],["reporte","📋 Reporte"],["monitor","📡 Monitor"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)} style={{flex:1,background:"transparent",color:tab===k?"#3b82f6":"#64748b",border:"none",borderBottom:tab===k?"2px solid #3b82f6":"2px solid transparent",padding:"11px 4px",fontSize:13,fontWeight:700,cursor:"pointer",position:"relative"}}>
             {l}
             {k==="reporte"&&(()=>{const nFalt=modifs.filter(m=>m.tipoMod==="faltante").length;return nFalt>0?<span style={{position:"absolute",top:6,right:6,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:900,padding:"1px 5px"}}>{nFalt}</span>:null;})()}
@@ -2864,6 +3050,7 @@ function App(){
         )}
         {tab==="mapa"&&<MapaDeposito pedidos={pedidos} setPedidos={fbSetPedidos} addModif={fbAddModif}/>}
         {tab==="reporte"&&<Reporte pedidos={pedidos} modifs={modifs} operario={operario}/>}
+        {tab==="monitor"&&<Monitor pedidos={pedidos} modifs={modifs} conectados={conectados} sessionId={sessionId}/>}
       </div>
     </div>
   );
